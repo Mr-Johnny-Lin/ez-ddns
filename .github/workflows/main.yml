@@ -1,0 +1,113 @@
+# Copyright (c) 2026 Johnny Lin (林展毅)
+# 本项目由林展毅原创开发，欢迎二次开发，但请务必保留原作者署名
+# 未经许可不得以本项目名义进行商业宣传
+
+name: CI/CD Pipeline
+
+permissions:
+  contents: write
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  APP_NAME: "ez-ddns"
+  GO_VERSION: "1.25"
+
+jobs:
+  build-windows:
+    name: Build Windows
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build Windows executable
+        run: |
+          echo "Building Windows executable..."
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o ${APP_NAME}-windows-amd64.exe .
+          echo "Build completed successfully!"
+          ls -lh ${APP_NAME}-windows-amd64.exe
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-binary
+          path: ${{ env.APP_NAME }}-windows-amd64.exe
+          retention-days: 30
+
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build Linux executable
+        run: |
+          echo "Building Linux executable..."
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ${APP_NAME}-linux-amd64 .
+          chmod +x ${APP_NAME}-linux-amd64
+          echo "Build completed successfully!"
+          ls -lh ${APP_NAME}-linux-amd64
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-binary
+          path: ${{ env.APP_NAME }}-linux-amd64
+          retention-days: 30
+
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs:
+      - build-windows
+      - build-linux
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-binary
+          path: .
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-binary
+          path: .
+
+      - name: Generate changelog
+        run: |
+          chmod +x scripts/generate-changelog.sh
+          ./scripts/generate-changelog.sh "${{ github.ref_name }}"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Release ${{ github.ref_name }}"
+          body_path: CHANGELOG.md
+          files: |
+            ${{ env.APP_NAME }}-windows-amd64.exe
+            ${{ env.APP_NAME }}-linux-amd64
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
