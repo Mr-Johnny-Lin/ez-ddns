@@ -1,4 +1,3 @@
-*.exe
-/ez-ddns-config.json
+/target
 .vscode
 .idea

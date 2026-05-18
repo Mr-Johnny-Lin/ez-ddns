@@ -5,6 +5,7 @@
 ## 功能特性
 
 - ✅ 自动获取当前公网 IP
+- ✅ 本地DNS预检查：更新前先通过DNS解析验证，减少运营商解析服务API调用
 - ✅ 智能判断：无记录时新增，有记录且 IP 变化时更新
 - ✅ 支持多条解析记录管理
 - ✅ 持续轮询监控，可配置检查间隔（默认3分钟）
@@ -118,7 +119,7 @@ tail -f ddns.log
 
 ```ini
 [Unit]
-Description=ez-ddns
+Description=EZ DDNS
 After=network.target
 
 [Service]
@@ -129,7 +130,8 @@ Environment=DDNS_DOMAIN_NAME=example.com
 Environment=DDNS_RR=home
 Environment=DDNS_INTERVAL=180
 Environment=DDNS_LOG_LEVEL=info
-ExecStart=/opt/ddns/ez-ddns-linux-amd64
+WorkingDirectory=/opt/ez-ddns
+ExecStart=/opt/ez-ddns/ez-ddns-linux-amd64
 Restart=always
 RestartSec=10
 
@@ -257,11 +259,21 @@ Release 会自动包含：
 
 ```bash
 # Windows
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o ez-ddns.exe .
+CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o ez-ddns-windows-amd64.exe .
 
 # Linux
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ez-ddns .
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ez-ddns-linux-amd64 .
 ```
+
+## 工作原理
+
+DDNS 更新流程：
+
+1. **获取公网IP**：通过多个公共服务（如 ipify.org、icanhazip.com）获取当前公网 IP
+2. **本地DNS预检查**：通过系统DNS解析域名，验证当前IP是否已正确指向（减少阿里云API调用）
+3. **查询阿里云记录**：如果DNS预检查未通过，查询阿里云DNS解析记录
+4. **记录比对**：检查阿里云记录中是否已有当前公网IP
+5. **执行更新**：删除旧记录并添加新的A记录
 
 ## 注意事项
 
@@ -272,6 +284,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ez-ddns .
 5. **IP 检测**：程序通过多个公共 IP 服务获取公网 IP，请确保网络可达
 6. **域名配置**：`DDNS_RR` 设置为 `@` 表示主域名，其他值表示子域名（如 `www`、`home` 等）
 7. **多记录支持**：程序会检查所有匹配的解析记录，如果当前 IP 已存在则跳过更新
+8. **DNS缓存**：本地DNS预检查可能受DNS缓存影响，若刚更新过记录需等待缓存过期
 
 ## 原创声明
 
@@ -281,4 +294,4 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ez-ddns .
 
 ## License
 
-MIT
+Apache License 2.0

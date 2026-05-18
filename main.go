@@ -17,6 +17,7 @@ import (
 	"github.com/alibabacloud-go/tea/tea"
 )
 
+// getPublicIP 获取当前公网IP地址，通过多个服务轮询确保可靠性
 func getPublicIP() (string, error) {
 	services := []string{
 		"https://api.ipify.org",
@@ -82,9 +83,11 @@ func main() {
 	}
 }
 
+// updateDNS DDNS主更新流程，协调各步骤执行
 func updateDNS(client *alidns.Client, config *Config) {
-	Debug("开始检查...")
+	Debug("开始DDNS检查...")
 
+	// 步骤1: 获取当前公网IP
 	currentIP, err := getPublicIP()
 	if err != nil {
 		Error("获取公网IP失败: %v", err)
@@ -92,75 +95,160 @@ func updateDNS(client *alidns.Client, config *Config) {
 	}
 	Debug("当前公网 IP: %s", currentIP)
 
+	// 步骤2: 本地DNS预检查（减少运营商API调用）
+	if checkLocalDNS(currentIP, config) {
+		Debug("本地DNS检测通过，无需更新")
+		return
+	}
+
+	// 步骤3: 查询阿里云DNS记录
+	records, err := getDomainRecords(client, config)
+	if err != nil {
+		Error("查询阿里云记录失败: %v", err)
+		return
+	}
+
+	// 步骤4: 检查是否已存在正确记录
+	if recordExists(records, currentIP) {
+		Debug("阿里云记录已正确指向当前IP，无需更新")
+		return
+	}
+
+	// 步骤5: 执行更新操作
+	updateDomainRecords(client, config, records, currentIP)
+}
+
+// checkLocalDNS 本地DNS预检查，通过DNS解析验证当前IP是否已生效
+// 返回true表示IP已正确解析，无需继续检查
+func checkLocalDNS(currentIP string, config *Config) bool {
+	domain := fmt.Sprintf("%s.%s", config.RR, config.DomainName)
+	Debug("本地DNS检测: %s", domain)
+
+	ips, err := net.LookupIP(domain)
+	if err != nil {
+		Debug("本地DNS解析失败: %v", err)
+		return false
+	}
+
+	for _, ip := range ips {
+		if ipStr := ip.String(); ipStr == currentIP {
+			return true
+		}
+	}
+
+	Debug("本地DNS解析结果: %v，与当前公网IP %s 不一致", ips, currentIP)
+	return false
+}
+
+// getDomainRecords 查询阿里云域名解析记录
+func getDomainRecords(client *alidns.Client, config *Config) ([]*alidns.DescribeDomainRecordsResponseBodyDomainRecordsRecord, error) {
 	describeReq := &alidns.DescribeDomainRecordsRequest{
 		DomainName: tea.String(config.DomainName),
 		RRKeyWord:  tea.String(config.RR),
 	}
+
 	describeResp, err := client.DescribeDomainRecords(describeReq)
 	if err != nil {
-		Error("查询记录失败: %v", err)
-		return
+		return nil, err
 	}
 
 	records := describeResp.Body.DomainRecords.Record
-	Debug("找到 %d 条解析记录", len(records))
+	Debug("远程云解析查询到 %d 条解析记录", len(records))
 
+	return records, nil
+}
+
+// recordExists 检查记录列表中是否已存在指定IP的记录
+func recordExists(records []*alidns.DescribeDomainRecordsResponseBodyDomainRecordsRecord, currentIP string) bool {
 	for _, record := range records {
-		Debug("检查记录: %s.%s -> %s", *record.RR, config.DomainName, *record.Value)
+		Debug("检查记录: %s.%s -> %s", *record.RR, *record.DomainName, *record.Value)
 		if *record.Value == currentIP {
-			Debug("当前 IP 已存在于解析记录中，无需更新。")
-			if err := UpdateLastIP(config, currentIP); err != nil {
-				Error("保存配置失败: %v", err)
-			}
-			return
+			return true
 		}
 	}
+	return false
+}
 
-	Debug("当前 IP 不在解析记录中，需要更新...")
+// updateDomainRecords 执行域名记录更新（删除旧记录 + 添加新记录）
+func updateDomainRecords(client *alidns.Client, config *Config, records []*alidns.DescribeDomainRecordsResponseBodyDomainRecordsRecord, currentIP string) {
+	Debug("当前IP不在解析记录中，开始更新...")
 
-	var deleteRecords []*alidns.DescribeDomainRecordsResponseBodyDomainRecordsRecord
+	// 步骤1: 确定需要删除的记录
+	deleteRecords := findRecordsToDelete(records, config.LastIP)
 
-	if config.LastIP != "" {
+	// 步骤2: 删除旧记录
+	if err := deleteDomainRecords(client, config, deleteRecords); err != nil {
+		Error("删除记录过程出现错误: %v", err)
+	}
+
+	// 步骤3: 添加新记录
+	if err := addDomainRecord(client, config, currentIP); err != nil {
+		Error("添加新记录失败: %v", err)
+	}
+}
+
+// findRecordsToDelete 查找需要删除的记录
+// 优先删除与LastIP匹配的记录，若无则删除所有记录
+func findRecordsToDelete(records []*alidns.DescribeDomainRecordsResponseBodyDomainRecordsRecord, lastIP string) []*alidns.DescribeDomainRecordsResponseBodyDomainRecordsRecord {
+	if lastIP != "" {
 		for _, record := range records {
-			if *record.Value == config.LastIP {
-				deleteRecords = append(deleteRecords, record)
-				break
+			if *record.Value == lastIP {
+				return []*alidns.DescribeDomainRecordsResponseBodyDomainRecordsRecord{record}
 			}
 		}
 	}
 
-	if len(deleteRecords) == 0 && len(records) > 0 {
-		deleteRecords = records
-		Debug("未找到旧 IP 记录，清空所有解析记录")
+	if len(records) > 0 {
+		Debug("未找到旧IP记录，将删除所有解析记录")
+		return records
 	}
 
-	for _, record := range deleteRecords {
+	return nil
+}
+
+// deleteDomainRecords 批量删除域名记录
+func deleteDomainRecords(client *alidns.Client, config *Config, records []*alidns.DescribeDomainRecordsResponseBodyDomainRecordsRecord) error {
+	var lastErr error
+	for _, record := range records {
 		Debug("删除记录 %s.%s -> %s...", *record.RR, config.DomainName, *record.Value)
+
 		deleteReq := &alidns.DeleteDomainRecordRequest{
 			RecordId: tea.String(*record.RecordId),
 		}
-		_, err = client.DeleteDomainRecord(deleteReq)
+
+		_, err := client.DeleteDomainRecord(deleteReq)
 		if err != nil {
 			Error("删除记录 %s.%s -> %s 失败: %v", *record.RR, config.DomainName, *record.Value, err)
+			lastErr = err
 		} else {
 			Info("删除记录 %s.%s -> %s 成功！", *record.RR, config.DomainName, *record.Value)
 		}
 	}
+	return lastErr
+}
 
+// addDomainRecord 添加新的A记录到阿里云DNS
+func addDomainRecord(client *alidns.Client, config *Config, currentIP string) error {
 	Debug("新增解析记录 %s.%s -> %s...", config.RR, config.DomainName, currentIP)
+
 	addReq := &alidns.AddDomainRecordRequest{
 		DomainName: tea.String(config.DomainName),
 		RR:         tea.String(config.RR),
 		Type:       tea.String("A"),
 		Value:      tea.String(currentIP),
 	}
-	_, err = client.AddDomainRecord(addReq)
+
+	_, err := client.AddDomainRecord(addReq)
 	if err != nil {
-		Error("新增记录 %s.%s -> %s 失败: %v", config.RR, config.DomainName, currentIP, err)
-	} else {
-		Info("新增记录 %s.%s -> %s 成功！", config.RR, config.DomainName, currentIP)
-		if err := UpdateLastIP(config, currentIP); err != nil {
-			Error("保存配置失败: %v", err)
-		}
+		return fmt.Errorf("新增记录失败: %v", err)
 	}
+
+	Info("新增记录 %s.%s -> %s 成功！", config.RR, config.DomainName, currentIP)
+
+	// 更新配置中的LastIP
+	if err := UpdateLastIP(config, currentIP); err != nil {
+		Error("保存配置失败: %v", err)
+	}
+
+	return nil
 }
