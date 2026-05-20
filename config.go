@@ -13,15 +13,20 @@ import (
 
 const configFilePath = "ez-ddns-config.json"
 
+type DomainConfig struct {
+	DomainName string `json:"domainName"`
+	RR         string `json:"rr"`
+	IPType     IPType `json:"ipType"`
+	LastIP     string `json:"lastIP"`
+}
+
 type Config struct {
-	AccessKeyId     string `json:"accessKeyId"`
-	AccessKeySecret string `json:"accessKeySecret"`
-	DomainName      string `json:"domainName"`
-	RR              string `json:"rr"`
-	Interval        int    `json:"interval"`
-	LastIP          string `json:"lastIP"`
-	LogLevel        string `json:"logLevel"`
-	IPType          string `json:"ipType"`
+	AccessKeyId     string         `json:"accessKeyId"`
+	AccessKeySecret string         `json:"accessKeySecret"`
+	Provider        ProviderType   `json:"provider"`
+	Interval        int            `json:"interval"`
+	LogLevel        string         `json:"logLevel"`
+	Domains         []DomainConfig `json:"domains"`
 }
 
 func LoadAndValidateConfig() (*Config, error) {
@@ -45,9 +50,9 @@ func LoadAndValidateConfig() (*Config, error) {
 
 func loadConfigFromFile() (*Config, error) {
 	config := &Config{
+		Provider: ProviderTypeAliyun,
 		Interval: 180,
 		LogLevel: "info",
-		IPType:   "ipv4",
 	}
 
 	file, err := os.Open(configFilePath)
@@ -76,14 +81,6 @@ func overrideWithEnv(config *Config) {
 		config.AccessKeySecret = envVal
 	}
 
-	if envVal := os.Getenv("DDNS_DOMAIN_NAME"); envVal != "" {
-		config.DomainName = envVal
-	}
-
-	if envVal := os.Getenv("DDNS_RR"); envVal != "" {
-		config.RR = envVal
-	}
-
 	if envVal := os.Getenv("DDNS_INTERVAL"); envVal != "" {
 		if parsedInterval, err := strconv.Atoi(envVal); err == nil && parsedInterval > 0 {
 			config.Interval = parsedInterval
@@ -94,8 +91,43 @@ func overrideWithEnv(config *Config) {
 		config.LogLevel = envVal
 	}
 
-	if envVal := os.Getenv("DDNS_IP_TYPE"); envVal != "" {
-		config.IPType = envVal
+	if envVal := os.Getenv("DDNS_PROVIDER"); envVal != "" {
+		config.Provider = ParseProviderType(envVal)
+	}
+
+	overrideDomainsWithEnv(config)
+}
+
+func overrideDomainsWithEnv(config *Config) {
+	for i := 0; ; i++ {
+		domainName := os.Getenv(fmt.Sprintf("DDNS_DOMAIN_%d_DOMAIN_NAME", i))
+		rr := os.Getenv(fmt.Sprintf("DDNS_DOMAIN_%d_RR", i))
+		ipType := os.Getenv(fmt.Sprintf("DDNS_DOMAIN_%d_IP_TYPE", i))
+
+		if domainName == "" && rr == "" && ipType == "" {
+			if i == 0 && len(config.Domains) == 0 {
+				continue
+			}
+			break
+		}
+
+		if i < len(config.Domains) {
+			if domainName != "" {
+				config.Domains[i].DomainName = domainName
+			}
+			if rr != "" {
+				config.Domains[i].RR = rr
+			}
+			if ipType != "" {
+				config.Domains[i].IPType = ParseIPType(ipType)
+			}
+		} else {
+			config.Domains = append(config.Domains, DomainConfig{
+				DomainName: domainName,
+				RR:         rr,
+				IPType:     ParseIPType(ipType),
+			})
+		}
 	}
 }
 
@@ -108,12 +140,24 @@ func validateConfig(config *Config) error {
 		return fmt.Errorf("请设置环境变量 ALIBABA_CLOUD_ACCESS_KEY_SECRET 或在配置文件中配置 accessKeySecret")
 	}
 
-	if config.DomainName == "" {
-		return fmt.Errorf("请设置环境变量 DDNS_DOMAIN_NAME 或在配置文件中配置 domainName")
+	if !config.Provider.IsValid() {
+		return fmt.Errorf("provider 必须为 %s", ProviderTypeAliyun)
 	}
 
-	if config.RR == "" {
-		return fmt.Errorf("请设置环境变量 DDNS_RR 或在配置文件中配置 rr")
+	if len(config.Domains) == 0 {
+		return fmt.Errorf("请在配置文件中至少配置一个域名")
+	}
+
+	for i, domain := range config.Domains {
+		if domain.DomainName == "" {
+			return fmt.Errorf("第 %d 个域名配置中 domainName 不能为空", i+1)
+		}
+		if domain.RR == "" {
+			return fmt.Errorf("第 %d 个域名配置中 rr 不能为空", i+1)
+		}
+		if !domain.IPType.IsValid() {
+			return fmt.Errorf("第 %d 个域名配置中 ipType 必须为 %s 或 %s", i+1, IPTypeIPv4, IPTypeIPv6)
+		}
 	}
 
 	if config.Interval <= 0 {
@@ -133,12 +177,4 @@ func saveConfigToFile(config *Config) error {
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(config)
-}
-
-func UpdateLastIP(config *Config, ip string) error {
-	if config.LastIP == ip {
-		return nil
-	}
-	config.LastIP = ip
-	return saveConfigToFile(config)
 }

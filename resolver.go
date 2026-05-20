@@ -12,11 +12,36 @@ import (
 	"strings"
 )
 
+type IPType string
+
+const (
+	IPTypeIPv4 IPType = "ipv4"
+	IPTypeIPv6 IPType = "ipv6"
+)
+
+func (t IPType) String() string {
+	return string(t)
+}
+
+func (t IPType) IsValid() bool {
+	return t == IPTypeIPv4 || t == IPTypeIPv6
+}
+
+func ParseIPType(s string) IPType {
+	switch s {
+	case string(IPTypeIPv6):
+		return IPTypeIPv6
+	case string(IPTypeIPv4):
+		return IPTypeIPv4
+	default:
+		return IPTypeIPv4
+	}
+}
+
 // IPResolver 定义IP解析策略接口
 type IPResolver interface {
 	GetPublicIP() (string, error)
-	GetRecordType() string
-	GetIPType() string
+	GetIPType() IPType
 }
 
 // IPv4Resolver IPv4解析策略实现
@@ -67,12 +92,8 @@ func (r *IPv4Resolver) GetPublicIP() (string, error) {
 	return "", fmt.Errorf("所有 IPv4 查询服务均失败，最后错误: %v", lastErr)
 }
 
-func (r *IPv4Resolver) GetRecordType() string {
-	return "A"
-}
-
-func (r *IPv4Resolver) GetIPType() string {
-	return "ipv4"
+func (r *IPv4Resolver) GetIPType() IPType {
+	return IPTypeIPv4
 }
 
 // IPv6Resolver IPv6解析策略实现
@@ -123,31 +144,25 @@ func (r *IPv6Resolver) GetPublicIP() (string, error) {
 	return "", fmt.Errorf("所有 IPv6 查询服务均失败，最后错误: %v", lastErr)
 }
 
-func (r *IPv6Resolver) GetRecordType() string {
-	return "AAAA"
-}
-
-func (r *IPv6Resolver) GetIPType() string {
-	return "ipv6"
+func (r *IPv6Resolver) GetIPType() IPType {
+	return IPTypeIPv6
 }
 
 // NewIPResolver 根据配置创建IP解析器
-func NewIPResolver(ipType string) IPResolver {
-	if ipType == "ipv6" {
+func NewIPResolver(ipType IPType) IPResolver {
+	if ipType == IPTypeIPv6 {
 		return &IPv6Resolver{}
 	}
 	return &IPv4Resolver{}
 }
 
 // NewIPResolvers 根据配置创建IP解析器列表
-func NewIPResolvers(ipType string) []IPResolver {
+func NewIPResolvers(ipType IPType) []IPResolver {
 	switch ipType {
-	case "ipv4":
+	case IPTypeIPv4:
 		return []IPResolver{&IPv4Resolver{}}
-	case "ipv6":
+	case IPTypeIPv6:
 		return []IPResolver{&IPv6Resolver{}}
-	case "all":
-		return []IPResolver{&IPv4Resolver{}, &IPv6Resolver{}}
 	default:
 		return []IPResolver{&IPv4Resolver{}}
 	}

@@ -4,8 +4,9 @@
 
 ## 功能特性
 
-- ✅ 自动获取当前公网 IP（支持 IPv4/IPv6/双栈）
-- ✅ 支持 IPv4（A记录）、IPv6（AAAA记录）、双栈（ALL）三种模式
+- ✅ 自动获取当前公网 IP（支持 IPv4/IPv6）
+- ✅ 支持 IPv4（A记录）、IPv6（AAAA记录）两种模式
+- ✅ 支持多域名配置（每个域名独立配置IP类型）
 - ✅ 本地DNS预检查：更新前先通过DNS解析验证，减少运营商解析服务API调用
 - ✅ 智能判断：无记录时新增，有记录且 IP 变化时更新
 - ✅ 支持多条解析记录管理
@@ -26,12 +27,23 @@
 {
   "accessKeyId": "your-access-key-id",
   "accessKeySecret": "your-access-key-secret",
-  "domainName": "example.com",
-  "rr": "home",
+  "provider": "aliyun",
   "interval": 180,
-  "lastIP": "",
   "logLevel": "info",
-  "ipType": "ipv4"
+  "domains": [
+    {
+      "domainName": "example.com",
+      "rr": "home",
+      "ipType": "ipv4",
+      "lastIP": ""
+    },
+    {
+      "domainName": "example.com",
+      "rr": "home",
+      "ipType": "ipv6",
+      "lastIP": ""
+    }
+  ]
 }
 ```
 
@@ -43,24 +55,52 @@
 |--------|------|------|
 | `ALIBABA_CLOUD_ACCESS_KEY_ID` | 阿里云 AccessKey ID | `LTAI5t...` |
 | `ALIBABA_CLOUD_ACCESS_KEY_SECRET` | 阿里云 AccessKey Secret | `xxxxx...` |
-| `DDNS_DOMAIN_NAME` | 主域名 | `example.com` |
-| `DDNS_RR` | 子域名/主机记录 | `home`, `www`, `@` |
+| `DDNS_PROVIDER` | 运营商类型 | `aliyun` |
 | `DDNS_INTERVAL` | 轮询间隔（秒） | `180` |
 | `DDNS_LOG_LEVEL` | 日志级别 | `debug`, `info` |
-| `DDNS_IP_TYPE` | IP类型 | `ipv4`, `ipv6`, `all` |
+| `DDNS_DOMAIN_N_DOMAIN_NAME` | 第N个域名的主域名（N从0开始） | `example.com` |
+| `DDNS_DOMAIN_N_RR` | 第N个域名的子域名/主机记录（N从0开始） | `home`, `www`, `@` |
+| `DDNS_DOMAIN_N_IP_TYPE` | 第N个域名的IP类型（N从0开始） | `ipv4`, `ipv6` |
+
+> **说明**：`N` 为数字索引，从 0 开始递增，支持配置任意数量的域名。例如：`DDNS_DOMAIN_0_*`、`DDNS_DOMAIN_1_*`、`DDNS_DOMAIN_2_*` 等。
 
 ### 配置项说明
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| `accessKeyId` | 阿里云 AccessKey ID | 必填 |
-| `accessKeySecret` | 阿里云 AccessKey Secret | 必填 |
-| `domainName` | 主域名 | 必填 |
-| `rr` | 子域名/主机记录 | `@` |
-| `interval` | 轮询间隔（秒） | `180` |
-| `lastIP` | 上次记录的 IP（自动更新） | 空 |
-| `logLevel` | 日志级别 | `info` |
-| `ipType` | IP类型：`ipv4`(A记录)、`ipv6`(AAAA记录)、`all`(双栈) | `ipv4` |
+| `accessKeyId` | 阿里云 AccessKey ID | 必填（可通过环境变量 `ALIBABA_CLOUD_ACCESS_KEY_ID` 设置） |
+| `accessKeySecret` | 阿里云 AccessKey Secret | 必填（可通过环境变量 `ALIBABA_CLOUD_ACCESS_KEY_SECRET` 设置） |
+| `provider` | 运营商类型 | `aliyun`（可通过环境变量 `DDNS_PROVIDER` 设置） |
+| `interval` | 轮询间隔（秒） | `180`（可通过环境变量 `DDNS_INTERVAL` 设置） |
+| `logLevel` | 日志级别：`debug` 或 `info` | `info`（可通过环境变量 `DDNS_LOG_LEVEL` 设置） |
+| `domains` | 域名配置数组 | 必填（至少一个，可通过环境变量 `DDNS_DOMAIN_N_*` 设置） |
+| `domains[].domainName` | 主域名 | 必填 |
+| `domains[].rr` | 子域名/主机记录 | 必填 |
+| `domains[].ipType` | IP类型：`ipv4`(A记录)、`ipv6`(AAAA记录) | 必填 |
+| `domains[].lastIP` | 上次记录的 IP（自动更新，无需手动配置） | 空 |
+
+> **注意**：配置文件中的值会被环境变量覆盖。例如：配置文件中设置 `interval: 180`，但环境变量 `DDNS_INTERVAL=60` 会将其覆盖为 60 秒。
+
+### 多域名配置说明
+
+通过配置多个域名项，可以实现双栈解析（同时支持IPv4和IPv6）：
+
+```json
+{
+  "domains": [
+    {
+      "domainName": "example.com",
+      "rr": "home",
+      "ipType": "ipv4"
+    },
+    {
+      "domainName": "example.com",
+      "rr": "home",
+      "ipType": "ipv6"
+    }
+  ]
+}
+```
 
 ### 日志级别
 
@@ -77,20 +117,21 @@
 # 使用配置文件
 .\ez-ddns-windows-amd64.exe
 
-# 或使用环境变量覆盖（IPv4模式）
+# 或使用环境变量覆盖
 $env:ALIBABA_CLOUD_ACCESS_KEY_ID = "your-access-key-id"
 $env:ALIBABA_CLOUD_ACCESS_KEY_SECRET = "your-access-key-secret"
-$env:DDNS_DOMAIN_NAME = "example.com"
-$env:DDNS_RR = "home"
 $env:DDNS_INTERVAL = "180"
 $env:DDNS_LOG_LEVEL = "info"
 
-[//]: # (IPv4模式)
-$env:DDNS_IP_TYPE = "ipv4"
-[//]: # (IPv6模式)
-[//]: # ($env:DDNS_IP_TYPE = "ipv6")
-[//]: # (双栈模式（同时更新IPv4和IPv6）)
-[//]: # ($env:DDNS_IP_TYPE = "all")
+# 配置第一个域名（IPv4）
+$env:DDNS_DOMAIN_0_DOMAIN_NAME = "example.com"
+$env:DDNS_DOMAIN_0_RR = "home"
+$env:DDNS_DOMAIN_0_IP_TYPE = "ipv4"
+
+# 配置第二个域名（IPv6）
+$env:DDNS_DOMAIN_1_DOMAIN_NAME = "example.com"
+$env:DDNS_DOMAIN_1_RR = "home"
+$env:DDNS_DOMAIN_1_IP_TYPE = "ipv6"
 
 .\ez-ddns-windows-amd64.exe
 ```
@@ -101,19 +142,21 @@ $env:DDNS_IP_TYPE = "ipv4"
 # 使用配置文件
 ./ez-ddns-linux-amd64
 
-# 或使用环境变量覆盖（IPv4模式）
+# 或使用环境变量覆盖
 export ALIBABA_CLOUD_ACCESS_KEY_ID="your-access-key-id"
 export ALIBABA_CLOUD_ACCESS_KEY_SECRET="your-access-key-secret"
-export DDNS_DOMAIN_NAME="example.com"
-export DDNS_RR="home"
 export DDNS_INTERVAL="180"
 export DDNS_LOG_LEVEL="info"
-# IPv4模式
-export DDNS_IP_TYPE="ipv4"
-# IPv6模式
-#export DDNS_IP_TYPE="ipv6"
-# 双栈模式（同时更新IPv4和IPv6）
-#export DDNS_IP_TYPE="all"
+
+# 配置第一个域名（IPv4）
+export DDNS_DOMAIN_0_DOMAIN_NAME="example.com"
+export DDNS_DOMAIN_0_RR="home"
+export DDNS_DOMAIN_0_IP_TYPE="ipv4"
+
+# 配置第二个域名（IPv6）
+export DDNS_DOMAIN_1_DOMAIN_NAME="example.com"
+export DDNS_DOMAIN_1_RR="home"
+export DDNS_DOMAIN_1_IP_TYPE="ipv6"
 
 chmod +x ez-ddns-linux-amd64
 ./ez-ddns-linux-amd64
@@ -132,7 +175,7 @@ tail -f ddns.log
 
 ### 使用 systemd 服务（推荐）
 
-创建服务文件 `/etc/systemd/system/ddns.service`（IPv4模式）：
+创建服务文件 `/etc/systemd/system/ddns.service`：
 
 ```ini
 [Unit]
@@ -143,11 +186,15 @@ After=network.target
 Type=simple
 Environment=ALIBABA_CLOUD_ACCESS_KEY_ID=your-access-key-id
 Environment=ALIBABA_CLOUD_ACCESS_KEY_SECRET=your-access-key-secret
-Environment=DDNS_DOMAIN_NAME=example.com
-Environment=DDNS_RR=home
+Environment=DDNS_PROVIDER=aliyun
 Environment=DDNS_INTERVAL=180
 Environment=DDNS_LOG_LEVEL=info
-Environment=DDNS_IP_TYPE=ipv4
+Environment=DDNS_DOMAIN_0_DOMAIN_NAME=example.com
+Environment=DDNS_DOMAIN_0_RR=home
+Environment=DDNS_DOMAIN_0_IP_TYPE=ipv4
+Environment=DDNS_DOMAIN_1_DOMAIN_NAME=example.com
+Environment=DDNS_DOMAIN_1_RR=home
+Environment=DDNS_DOMAIN_1_IP_TYPE=ipv6
 WorkingDirectory=/opt/ez-ddns
 ExecStart=/opt/ez-ddns/ez-ddns-linux-amd64
 Restart=always
@@ -156,10 +203,6 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 ```
-
-**IPv6模式**：将 `DDNS_IP_TYPE=ipv4` 改为 `DDNS_IP_TYPE=ipv6`
-
-**双栈模式**：将 `DDNS_IP_TYPE=ipv4` 改为 `DDNS_IP_TYPE=all`
 
 启动服务：
 
@@ -304,9 +347,10 @@ DDNS 更新流程：
 3. **API 限制**：注意阿里云 API 的调用频率限制，建议轮询间隔不低于 60 秒
 4. **日志监控**：建议定期检查运行日志，确保服务正常运行
 5. **IP 检测**：程序通过多个公共 IP 服务获取公网 IP，请确保网络可达
-6. **域名配置**：`DDNS_RR` 设置为 `@` 表示主域名，其他值表示子域名（如 `www`、`home` 等）
+6. **域名配置**：`RR` 设置为 `@` 表示主域名，其他值表示子域名（如 `www`、`home` 等）
 7. **多记录支持**：程序会检查所有匹配的解析记录，如果当前 IP 已存在则跳过更新
 8. **DNS缓存**：本地DNS预检查可能受DNS缓存影响，若刚更新过记录需等待缓存过期
+9. **双栈配置**：如需同时支持IPv4和IPv6，请在配置文件中添加两个域名配置项
 
 ## 原创声明
 
