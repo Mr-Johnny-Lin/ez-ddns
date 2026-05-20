@@ -21,6 +21,7 @@ type Config struct {
 	Interval        int    `json:"interval"`
 	LastIP          string `json:"lastIP"`
 	LogLevel        string `json:"logLevel"`
+	IPType          string `json:"ipType"`
 }
 
 func LoadAndValidateConfig() (*Config, error) {
@@ -46,6 +47,7 @@ func loadConfigFromFile() (*Config, error) {
 	config := &Config{
 		Interval: 180,
 		LogLevel: "info",
+		IPType:   "ipv4",
 	}
 
 	file, err := os.Open(configFilePath)
@@ -90,6 +92,10 @@ func overrideWithEnv(config *Config) {
 
 	if envVal := os.Getenv("DDNS_LOG_LEVEL"); envVal != "" {
 		config.LogLevel = envVal
+	}
+
+	if envVal := os.Getenv("DDNS_IP_TYPE"); envVal != "" {
+		config.IPType = envVal
 	}
 }
 

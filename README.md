@@ -4,7 +4,8 @@
 
 ## 功能特性
 
-- ✅ 自动获取当前公网 IP
+- ✅ 自动获取当前公网 IP（支持 IPv4/IPv6/双栈）
+- ✅ 支持 IPv4（A记录）、IPv6（AAAA记录）、双栈（ALL）三种模式
 - ✅ 本地DNS预检查：更新前先通过DNS解析验证，减少运营商解析服务API调用
 - ✅ 智能判断：无记录时新增，有记录且 IP 变化时更新
 - ✅ 支持多条解析记录管理
@@ -29,7 +30,8 @@
   "rr": "home",
   "interval": 180,
   "lastIP": "",
-  "logLevel": "info"
+  "logLevel": "info",
+  "ipType": "ipv4"
 }
 ```
 
@@ -45,6 +47,7 @@
 | `DDNS_RR` | 子域名/主机记录 | `home`, `www`, `@` |
 | `DDNS_INTERVAL` | 轮询间隔（秒） | `180` |
 | `DDNS_LOG_LEVEL` | 日志级别 | `debug`, `info` |
+| `DDNS_IP_TYPE` | IP类型 | `ipv4`, `ipv6`, `all` |
 
 ### 配置项说明
 
@@ -57,6 +60,7 @@
 | `interval` | 轮询间隔（秒） | `180` |
 | `lastIP` | 上次记录的 IP（自动更新） | 空 |
 | `logLevel` | 日志级别 | `info` |
+| `ipType` | IP类型：`ipv4`(A记录)、`ipv6`(AAAA记录)、`all`(双栈) | `ipv4` |
 
 ### 日志级别
 
@@ -73,13 +77,20 @@
 # 使用配置文件
 .\ez-ddns-windows-amd64.exe
 
-# 或使用环境变量覆盖
+# 或使用环境变量覆盖（IPv4模式）
 $env:ALIBABA_CLOUD_ACCESS_KEY_ID = "your-access-key-id"
 $env:ALIBABA_CLOUD_ACCESS_KEY_SECRET = "your-access-key-secret"
 $env:DDNS_DOMAIN_NAME = "example.com"
 $env:DDNS_RR = "home"
 $env:DDNS_INTERVAL = "180"
 $env:DDNS_LOG_LEVEL = "info"
+
+[//]: # (IPv4模式)
+$env:DDNS_IP_TYPE = "ipv4"
+[//]: # (IPv6模式)
+[//]: # ($env:DDNS_IP_TYPE = "ipv6")
+[//]: # (双栈模式（同时更新IPv4和IPv6）)
+[//]: # ($env:DDNS_IP_TYPE = "all")
 
 .\ez-ddns-windows-amd64.exe
 ```
@@ -90,13 +101,19 @@ $env:DDNS_LOG_LEVEL = "info"
 # 使用配置文件
 ./ez-ddns-linux-amd64
 
-# 或使用环境变量覆盖
+# 或使用环境变量覆盖（IPv4模式）
 export ALIBABA_CLOUD_ACCESS_KEY_ID="your-access-key-id"
 export ALIBABA_CLOUD_ACCESS_KEY_SECRET="your-access-key-secret"
 export DDNS_DOMAIN_NAME="example.com"
 export DDNS_RR="home"
 export DDNS_INTERVAL="180"
 export DDNS_LOG_LEVEL="info"
+# IPv4模式
+export DDNS_IP_TYPE="ipv4"
+# IPv6模式
+#export DDNS_IP_TYPE="ipv6"
+# 双栈模式（同时更新IPv4和IPv6）
+#export DDNS_IP_TYPE="all"
 
 chmod +x ez-ddns-linux-amd64
 ./ez-ddns-linux-amd64
@@ -115,7 +132,7 @@ tail -f ddns.log
 
 ### 使用 systemd 服务（推荐）
 
-创建服务文件 `/etc/systemd/system/ddns.service`：
+创建服务文件 `/etc/systemd/system/ddns.service`（IPv4模式）：
 
 ```ini
 [Unit]
@@ -130,6 +147,7 @@ Environment=DDNS_DOMAIN_NAME=example.com
 Environment=DDNS_RR=home
 Environment=DDNS_INTERVAL=180
 Environment=DDNS_LOG_LEVEL=info
+Environment=DDNS_IP_TYPE=ipv4
 WorkingDirectory=/opt/ez-ddns
 ExecStart=/opt/ez-ddns/ez-ddns-linux-amd64
 Restart=always
@@ -138,6 +156,10 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target
 ```
+
+**IPv6模式**：将 `DDNS_IP_TYPE=ipv4` 改为 `DDNS_IP_TYPE=ipv6`
+
+**双栈模式**：将 `DDNS_IP_TYPE=ipv4` 改为 `DDNS_IP_TYPE=all`
 
 启动服务：
 
