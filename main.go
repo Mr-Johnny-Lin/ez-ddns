@@ -5,89 +5,74 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
-	"time"
+
+	"ez-ddns/dao"
+
+	_ "github.com/glebarez/sqlite"
 )
 
-func main() {
-	config, err := LoadAndValidateConfig()
+const dbFilePath = "ez-ddns.db"
+
+func initDB() (*sql.DB, error) {
+	db, err := sql.Open("sqlite", dbFilePath)
 	if err != nil {
-		fmt.Printf("错误: %v\n", err)
-		return
+		return nil, err
 	}
 
-	if config.LogLevel == "debug" {
-		SetLogLevel(LogLevelDebug)
-	} else {
-		SetLogLevel(LogLevelInfo)
-	}
+	createTablesSQL := `
+	CREATE TABLE IF NOT EXISTS config (
+		id TEXT PRIMARY KEY,
+		access_key_id TEXT,
+		access_key_secret TEXT,
+		provider TEXT,
+		interval INTEGER
+	);
+	CREATE TABLE IF NOT EXISTS domains (
+		id TEXT PRIMARY KEY,
+		config_id TEXT,
+		domain_name TEXT,
+		rr TEXT,
+		ip_type TEXT,
+		last_ip TEXT,
+		FOREIGN KEY (config_id) REFERENCES config(id)
+	);
+	CREATE TABLE IF NOT EXISTS system_settings (
+		id TEXT PRIMARY KEY,
+		data JSON NOT NULL,
+		created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
+		updated_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
+	);
+	CREATE UNIQUE INDEX IF NOT EXISTS idx_domains_unique ON domains (domain_name, rr, ip_type);
+	`
 
-	provider, err := NewDNSProvider(config)
+	_, err = db.Exec(createTablesSQL)
 	if err != nil {
-		Error("初始化DNS运营商失败: %v", err)
-		return
+		return nil, err
 	}
 
-	Info("DDNS 服务启动,轮询间隔: %d 秒, 运营商: %s, 域名数量: %d", config.Interval, config.Provider, len(config.Domains))
-	Info("按 Ctrl+C 停止服务")
-
-	for {
-		updateChan := make(chan bool)
-
-		for i := range config.Domains {
-			go func(domainConfig *DomainConfig) {
-				resolver := NewIPResolver(domainConfig.IPType)
-				lastIP := domainConfig.LastIP
-				updateDNS(provider, domainConfig, resolver)
-				updateChan <- lastIP != domainConfig.LastIP
-			}(&config.Domains[i])
-		}
-
-		needSave := false
-		for range config.Domains {
-			if <-updateChan {
-				needSave = true
-			}
-		}
-		close(updateChan)
-
-		if needSave {
-			if err := saveConfigToFile(config); err != nil {
-				Error("保存配置失败: %v", err)
-			}
-		}
-
-		time.Sleep(time.Duration(config.Interval) * time.Second)
-	}
+	return db, nil
 }
 
-func updateDNS(provider DNSProvider, domainConfig *DomainConfig, resolver IPResolver) {
-	Debug("开始DDNS检查...")
-
-	currentIP, err := resolver.GetPublicIP()
+func main() {
+	db, err := initDB()
 	if err != nil {
-		Error("获取公网IP(%s)失败: %v", resolver.GetIPType(), err)
+		fmt.Printf("初始化数据库失败: %v\n", err)
 		return
 	}
-	Debug("当前公网 IP(%s): %s", resolver.GetIPType(), currentIP)
+	defer db.Close()
 
-	if checkLocalDNS(currentIP, *domainConfig) {
-		Debug("本地DNS检测通过，无需更新")
-		return
-	}
+	dao.Init(db)
 
-	records, err := provider.GetDomainRecords(*domainConfig)
-	if err != nil {
-		Error("查询DNS记录失败: %v", err)
+	command, subcommand, args := ParseArgs()
+	if command == "" {
+		PrintHelp()
 		return
 	}
 
-	if recordExists(records, currentIP) {
-		Debug("DNS记录已正确指向当前IP，无需更新")
-		return
-	}
-
-	if updateDomainRecords(provider, *domainConfig, records, currentIP) {
-		domainConfig.LastIP = currentIP
+	cliHandler := NewCLIHandler(dao.Config, dao.Domain, dao.System)
+	if err := cliHandler.HandleCommand(command, subcommand, args); err != nil {
+		fmt.Printf("操作失败: %v\n", err)
 	}
 }

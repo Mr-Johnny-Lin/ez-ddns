@@ -7,45 +7,24 @@ package main
 import (
 	"fmt"
 
+	"ez-ddns/model"
+
 	alidns "github.com/alibabacloud-go/alidns-20150109/v5/client"
 	openapi "github.com/alibabacloud-go/darabonba-openapi/v2/client"
 	"github.com/alibabacloud-go/tea/tea"
 )
 
-type ProviderType string
-
-const (
-	ProviderTypeAliyun ProviderType = "aliyun"
-)
-
-func (t ProviderType) String() string {
-	return string(t)
-}
-
-func (t ProviderType) IsValid() bool {
-	return t == ProviderTypeAliyun
-}
-
-func ParseProviderType(s string) ProviderType {
-	switch s {
-	case string(ProviderTypeAliyun):
-		return ProviderTypeAliyun
-	default:
-		return ProviderTypeAliyun
-	}
-}
-
 type DNSRecord struct {
-	ID        string
-	Domain    string
-	RR        string
-	Type      string
-	Value     string
+	ID     string
+	Domain string
+	RR     string
+	Type   string
+	Value  string
 }
 
 type DNSProvider interface {
-	GetDomainRecords(domainConfig DomainConfig) ([]DNSRecord, error)
-	AddDomainRecord(domainConfig DomainConfig, ip string) error
+	GetDomainRecords(domainConfig model.DomainConfig) ([]DNSRecord, error)
+	AddDomainRecord(domainConfig model.DomainConfig, ip string) error
 	DeleteDomainRecord(recordID string) error
 }
 
@@ -53,16 +32,16 @@ type AliDNSProvider struct {
 	client *alidns.Client
 }
 
-func NewDNSProvider(config *Config) (DNSProvider, error) {
+func NewDNSProvider(config model.Config) (DNSProvider, error) {
 	switch config.Provider {
-	case ProviderTypeAliyun:
+	case model.ProviderTypeAliyun:
 		return NewAliDNSProvider(config)
 	default:
 		return nil, fmt.Errorf("不支持的运营商类型: %s", config.Provider)
 	}
 }
 
-func NewAliDNSProvider(config *Config) (*AliDNSProvider, error) {
+func NewAliDNSProvider(config model.Config) (*AliDNSProvider, error) {
 	clientConfig := &openapi.Config{
 		AccessKeyId:     &config.AccessKeyId,
 		AccessKeySecret: &config.AccessKeySecret,
@@ -77,7 +56,7 @@ func NewAliDNSProvider(config *Config) (*AliDNSProvider, error) {
 	return &AliDNSProvider{client: client}, nil
 }
 
-func (p *AliDNSProvider) GetDomainRecords(domainConfig DomainConfig) ([]DNSRecord, error) {
+func (p *AliDNSProvider) GetDomainRecords(domainConfig model.DomainConfig) ([]DNSRecord, error) {
 	recordType := p.getRecordType(domainConfig.IPType)
 
 	describeReq := &alidns.DescribeDomainRecordsRequest{
@@ -95,11 +74,11 @@ func (p *AliDNSProvider) GetDomainRecords(domainConfig DomainConfig) ([]DNSRecor
 	result := make([]DNSRecord, 0, len(records))
 	for _, record := range records {
 		result = append(result, DNSRecord{
-			ID:        *record.RecordId,
-			Domain:    *record.DomainName,
-			RR:        *record.RR,
-			Type:      *record.Type,
-			Value:     *record.Value,
+			ID:     *record.RecordId,
+			Domain: *record.DomainName,
+			RR:     *record.RR,
+			Type:   *record.Type,
+			Value:  *record.Value,
 		})
 	}
 
@@ -107,14 +86,14 @@ func (p *AliDNSProvider) GetDomainRecords(domainConfig DomainConfig) ([]DNSRecor
 	return result, nil
 }
 
-func (p *AliDNSProvider) getRecordType(ipType IPType) string {
-	if ipType == IPTypeIPv6 {
+func (p *AliDNSProvider) getRecordType(ipType model.IPType) string {
+	if ipType == model.IPTypeIPv6 {
 		return "AAAA"
 	}
 	return "A"
 }
 
-func (p *AliDNSProvider) AddDomainRecord(domainConfig DomainConfig, ip string) error {
+func (p *AliDNSProvider) AddDomainRecord(domainConfig model.DomainConfig, ip string) error {
 	recordType := p.getRecordType(domainConfig.IPType)
 
 	Debug("新增%s解析记录 %s.%s -> %s...", recordType, domainConfig.RR, domainConfig.DomainName, ip)

@@ -1,171 +1,128 @@
 # ez-ddns
 
-基于阿里云 DNS API 的动态域名解析（DDNS）工具，自动检测公网 IP 变化并更新 DNS 记录。
+基于阿里云 DNS API 的轻量级动态域名解析（DDNS）工具，自动检测公网 IP 变化并更新 DNS 记录。
 
 ## 功能特性
 
 - ✅ 自动获取当前公网 IP（支持 IPv4/IPv6）
 - ✅ 支持 IPv4（A记录）、IPv6（AAAA记录）两种模式
 - ✅ 支持多域名配置（每个域名独立配置IP类型）
-- ✅ 本地DNS预检查：更新前先通过DNS解析验证，减少运营商解析服务API调用
+- ✅ 本地DNS预检查：更新前先通过DNS解析验证，减少运营商API调用
 - ✅ 智能判断：无记录时新增，有记录且 IP 变化时更新
 - ✅ 支持多条解析记录管理
 - ✅ 持续轮询监控，可配置检查间隔（默认3分钟）
-- ✅ 支持配置文件和环境变量两种配置方式（环境变量优先）
 - ✅ 支持日志级别配置（DEBUG/INFO/ERROR）
 - ✅ 自动保存上次 IP 记录，避免重复更新
 - ✅ 支持 Windows 和 Linux 平台
-- ✅ 完整的 GitLab CI/CD 自动化构建
+- ✅ 完整的 CI/CD 自动化构建（GitHub Actions）
+- ✅ **CLI命令管理**：通过命令行管理配置和域名
+- ✅ **SQLite数据持久化**：配置存储在本地数据库中
 
-## 配置方式
+## 快速开始
 
-### 方式一：配置文件
+### 启动服务
 
-创建 `ez-ddns-config.json` 文件：
+```bash
+# 启动DDNS服务（默认日志级别info）
+ez-ddns start
 
-```json
-{
-  "accessKeyId": "your-access-key-id",
-  "accessKeySecret": "your-access-key-secret",
-  "provider": "aliyun",
-  "interval": 180,
-  "logLevel": "info",
-  "domains": [
-    {
-      "domainName": "example.com",
-      "rr": "home",
-      "ipType": "ipv4",
-      "lastIP": ""
-    },
-    {
-      "domainName": "example.com",
-      "rr": "home",
-      "ipType": "ipv6",
-      "lastIP": ""
-    }
-  ]
-}
+# 启动服务并设置调试日志
+ez-ddns start --loglevel=debug
 ```
 
-### 方式二：环境变量
+### 配置管理
 
-程序优先读取环境变量，如果环境变量为空则使用配置文件中的值。
+```bash
+# 创建配置
+ez-ddns config create <config-id> --access-key-id=<key> --access-key-secret=<secret> [--provider=aliyun] [--interval=180]
 
-| 变量名 | 说明 | 示例 |
-|--------|------|------|
-| `ALIBABA_CLOUD_ACCESS_KEY_ID` | 阿里云 AccessKey ID | `LTAI5t...` |
-| `ALIBABA_CLOUD_ACCESS_KEY_SECRET` | 阿里云 AccessKey Secret | `xxxxx...` |
-| `DDNS_PROVIDER` | 运营商类型 | `aliyun` |
-| `DDNS_INTERVAL` | 轮询间隔（秒） | `180` |
-| `DDNS_LOG_LEVEL` | 日志级别 | `debug`, `info` |
-| `DDNS_DOMAIN_N_DOMAIN_NAME` | 第N个域名的主域名（N从0开始） | `example.com` |
-| `DDNS_DOMAIN_N_RR` | 第N个域名的子域名/主机记录（N从0开始） | `home`, `www`, `@` |
-| `DDNS_DOMAIN_N_IP_TYPE` | 第N个域名的IP类型（N从0开始） | `ipv4`, `ipv6` |
+# 示例
+ez-ddns config create home --access-key-id=LTAI5t... --access-key-secret=xxx --interval=300
 
-> **说明**：`N` 为数字索引，从 0 开始递增，支持配置任意数量的域名。例如：`DDNS_DOMAIN_0_*`、`DDNS_DOMAIN_1_*`、`DDNS_DOMAIN_2_*` 等。
+# 查看所有配置
+ez-ddns config list
 
-### 配置项说明
+# 更新配置
+ez-ddns config update <config-id> --interval=600
+
+# 删除配置
+ez-ddns config delete <config-id>
+```
+
+### 域名管理
+
+```bash
+# 添加域名到配置
+ez-ddns domain add <config-id> --domain-name=<domain> --rr=<record> [--ip-type=ipv4]
+
+# 示例 - 添加IPv4记录
+ez-ddns domain add home --domain-name=example.com --rr=www --ip-type=ipv4
+
+# 示例 - 添加IPv6记录
+ez-ddns domain add home --domain-name=example.com --rr=www --ip-type=ipv6
+
+# 查看配置的域名列表
+ez-ddns domain list <config-id>
+
+# 删除域名
+ez-ddns domain remove <config-id> --domain-name=<domain> --rr=<record> --ip-type=ipv4
+
+# 查看系统状态
+ez-ddns status
+
+# 设置日志级别
+ez-ddns loglevel debug
+```
+
+### CLI命令完整帮助
+
+```bash
+ez-ddns help
+```
+
+## 配置项说明
 
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| `accessKeyId` | 阿里云 AccessKey ID | 必填（可通过环境变量 `ALIBABA_CLOUD_ACCESS_KEY_ID` 设置） |
-| `accessKeySecret` | 阿里云 AccessKey Secret | 必填（可通过环境变量 `ALIBABA_CLOUD_ACCESS_KEY_SECRET` 设置） |
-| `provider` | 运营商类型 | `aliyun`（可通过环境变量 `DDNS_PROVIDER` 设置） |
-| `interval` | 轮询间隔（秒） | `180`（可通过环境变量 `DDNS_INTERVAL` 设置） |
-| `logLevel` | 日志级别：`debug` 或 `info` | `info`（可通过环境变量 `DDNS_LOG_LEVEL` 设置） |
-| `domains` | 域名配置数组 | 必填（至少一个，可通过环境变量 `DDNS_DOMAIN_N_*` 设置） |
-| `domains[].domainName` | 主域名 | 必填 |
-| `domains[].rr` | 子域名/主机记录 | 必填 |
-| `domains[].ipType` | IP类型：`ipv4`(A记录)、`ipv6`(AAAA记录) | 必填 |
-| `domains[].lastIP` | 上次记录的 IP（自动更新，无需手动配置） | 空 |
-
-> **注意**：配置文件中的值会被环境变量覆盖。例如：配置文件中设置 `interval: 180`，但环境变量 `DDNS_INTERVAL=60` 会将其覆盖为 60 秒。
-
-### 多域名配置说明
-
-通过配置多个域名项，可以实现双栈解析（同时支持IPv4和IPv6）：
-
-```json
-{
-  "domains": [
-    {
-      "domainName": "example.com",
-      "rr": "home",
-      "ipType": "ipv4"
-    },
-    {
-      "domainName": "example.com",
-      "rr": "home",
-      "ipType": "ipv6"
-    }
-  ]
-}
-```
-
-### 日志级别
-
-| 级别 | 说明 | 输出内容 |
-|------|------|----------|
-| `debug` | 调试模式 | 详细的调试信息，适合开发调试 |
-| `info` | 信息模式 | 关键操作信息，适合生产环境 |
+| `access-key-id` | 阿里云 AccessKey ID | 必填 |
+| `access-key-secret` | 阿里云 AccessKey Secret | 必填 |
+| `provider` | DNS运营商类型 | `aliyun` |
+| `interval` | 轮询间隔（秒） | `180`（3分钟） |
+| `loglevel` | 日志级别：`debug`、`info`、`error` | `info` |
+| `ip-type` | IP类型：`ipv4`、`ipv6` | `ipv4` |
 
 ## 使用方法
 
 ### Windows (PowerShell)
 
 ```powershell
-# 使用配置文件
-.\ez-ddns-windows-amd64.exe
+# 创建配置
+.\ez-ddns-windows-amd64.exe config create home --access-key-id=LTAI5t... --access-key-secret=xxx
 
-# 或使用环境变量覆盖
-$env:ALIBABA_CLOUD_ACCESS_KEY_ID = "your-access-key-id"
-$env:ALIBABA_CLOUD_ACCESS_KEY_SECRET = "your-access-key-secret"
-$env:DDNS_INTERVAL = "180"
-$env:DDNS_LOG_LEVEL = "info"
+# 添加域名
+.\ez-ddns-windows-amd64.exe domain add home --domain-name=example.com --rr=www --ip-type=ipv4
 
-# 配置第一个域名（IPv4）
-$env:DDNS_DOMAIN_0_DOMAIN_NAME = "example.com"
-$env:DDNS_DOMAIN_0_RR = "home"
-$env:DDNS_DOMAIN_0_IP_TYPE = "ipv4"
-
-# 配置第二个域名（IPv6）
-$env:DDNS_DOMAIN_1_DOMAIN_NAME = "example.com"
-$env:DDNS_DOMAIN_1_RR = "home"
-$env:DDNS_DOMAIN_1_IP_TYPE = "ipv6"
-
-.\ez-ddns-windows-amd64.exe
+# 启动服务
+.\ez-ddns-windows-amd64.exe start --loglevel=debug
 ```
 
 ### Linux
 
 ```bash
-# 使用配置文件
-./ez-ddns-linux-amd64
+# 创建配置
+./ez-ddns-linux-amd64 config create home --access-key-id=LTAI5t... --access-key-secret=xxx
 
-# 或使用环境变量覆盖
-export ALIBABA_CLOUD_ACCESS_KEY_ID="your-access-key-id"
-export ALIBABA_CLOUD_ACCESS_KEY_SECRET="your-access-key-secret"
-export DDNS_INTERVAL="180"
-export DDNS_LOG_LEVEL="info"
+# 添加域名
+./ez-ddns-linux-amd64 domain add home --domain-name=example.com --rr=www --ip-type=ipv4
 
-# 配置第一个域名（IPv4）
-export DDNS_DOMAIN_0_DOMAIN_NAME="example.com"
-export DDNS_DOMAIN_0_RR="home"
-export DDNS_DOMAIN_0_IP_TYPE="ipv4"
-
-# 配置第二个域名（IPv6）
-export DDNS_DOMAIN_1_DOMAIN_NAME="example.com"
-export DDNS_DOMAIN_1_RR="home"
-export DDNS_DOMAIN_1_IP_TYPE="ipv6"
-
-chmod +x ez-ddns-linux-amd64
-./ez-ddns-linux-amd64
+# 启动服务
+./ez-ddns-linux-amd64 start
 ```
 
 ### 后台运行（Linux）
 
 ```bash
-nohup ./ez-ddns-linux-amd64 > ddns.log 2>&1 &
+nohup ./ez-ddns-linux-amd64 start > ddns.log 2>&1 &
 ```
 
 查看日志：
@@ -184,19 +141,8 @@ After=network.target
 
 [Service]
 Type=simple
-Environment=ALIBABA_CLOUD_ACCESS_KEY_ID=your-access-key-id
-Environment=ALIBABA_CLOUD_ACCESS_KEY_SECRET=your-access-key-secret
-Environment=DDNS_PROVIDER=aliyun
-Environment=DDNS_INTERVAL=180
-Environment=DDNS_LOG_LEVEL=info
-Environment=DDNS_DOMAIN_0_DOMAIN_NAME=example.com
-Environment=DDNS_DOMAIN_0_RR=home
-Environment=DDNS_DOMAIN_0_IP_TYPE=ipv4
-Environment=DDNS_DOMAIN_1_DOMAIN_NAME=example.com
-Environment=DDNS_DOMAIN_1_RR=home
-Environment=DDNS_DOMAIN_1_IP_TYPE=ipv6
 WorkingDirectory=/opt/ez-ddns
-ExecStart=/opt/ez-ddns/ez-ddns-linux-amd64
+ExecStart=/opt/ez-ddns/ez-ddns-linux-amd64 start --loglevel=info
 Restart=always
 RestartSec=10
 
@@ -213,7 +159,37 @@ sudo systemctl start ddns
 sudo systemctl status ddns
 ```
 
-## GitLab CI/CD 构建
+> **注意**：配置和域名通过CLI命令管理，无需在systemd服务中设置环境变量。
+
+## 命令参考
+
+### 全局命令
+
+| 命令 | 说明 |
+|------|------|
+| `ez-ddns start [--loglevel=<level>]` | 启动DDNS服务 |
+| `ez-ddns status` | 查看系统状态 |
+| `ez-ddns loglevel <debug/info/error>` | 设置日志级别 |
+| `ez-ddns help` | 显示帮助信息 |
+
+### 配置管理命令
+
+| 命令 | 说明 |
+|------|------|
+| `ez-ddns config list` | 列出所有配置 |
+| `ez-ddns config create <id> --access-key-id=<key> --access-key-secret=<secret> [--interval=<seconds>] [--provider=<provider>]` | 创建配置 |
+| `ez-ddns config update <id> [--access-key-id=<key>] [--access-key-secret=<secret>] [--interval=<seconds>] [--provider=<provider>]` | 更新配置 |
+| `ez-ddns config delete <id>` | 删除配置 |
+
+### 域名管理命令
+
+| 命令 | 说明 |
+|------|------|
+| `ez-ddns domain list <config-id>` | 列出指定配置的域名 |
+| `ez-ddns domain add <config-id> --domain-name=<domain> --rr=<record> [--ip-type=<ipv4\|ipv6>]` | 添加域名 |
+| `ez-ddns domain remove <config-id> --domain-name=<domain> --rr=<record> [--ip-type=<ipv4\|ipv6>]` | 删除域名 |
+
+## GitHub Actions 构建
 
 项目配置了自动化构建流程，每次推送代码都会自动构建。
 
@@ -244,81 +220,45 @@ sudo systemctl status ddns
 | `ci` | CI/CD配置变更 | `ci: 优化构建流程` |
 | `build` | 构建系统变更 | `build: 更新Go版本` |
 
-#### 提交示例
-
-```bash
-# 新功能
-git commit -m "feat: 添加Linux systemd服务支持"
-
-# 修复bug
-git commit -m "fix: 修复环境变量解析错误"
-
-# 多个变更
-git commit -m "feat: 支持自定义轮询间隔
-
-- 添加DDNS_INTERVAL环境变量
-- 默认间隔3分钟
-- 支持动态调整"
-```
-
 ### 构建产物
 
 - `ez-ddns-windows-amd64.exe` - Windows 64位版本
 - `ez-ddns-linux-amd64` - Linux 64位版本
 
-### 下载构建产物
-
-1. 进入 GitLab 项目
-2. 导航到 **CI/CD → Pipelines**
-3. 点击最新的流水线
-4. 在 **Jobs** 标签页下载 artifacts
-
-### 发布 Release（打标签时）
-
-当创建 Git 标签时，会自动：
-1. 提取从上一个标签以来的所有提交记录
-2. 按类型分类（新功能、修复、文档等）
-3. 生成格式化的 Changelog
-4. 创建 GitLab Release 并附加构建产物
-
-```bash
-# 创建标签
-git tag v1.0.0
-
-# 推送标签到远程仓库（触发CI/CD）
-git push origin v1.0.0
-```
-
-Release 会自动包含：
-- 📋 分类的更新日志（基于提交规范）
-- 🪟 Windows AMD64 可执行文件
-- 🐧 Linux AMD64 可执行文件
-
-#### Release 示例输出
-
-```
-## 🚀 更新内容
-
-### ✨ 新功能
-- feat: 添加轮询间隔配置 (a1b2c3d)
-- feat: 支持多平台构建 (e4f5g6h)
-
-### 🐛 修复
-- fix: 修复IP获取超时问题 (i7j8k9l)
-
-### 📝 文档
-- docs: 更新使用说明 (m0n1o2p)
-```
-
-### 查看历史版本
-
-在 GitLab 项目的 **Deployments → Releases** 页面可以查看所有发布的版本和更新日志。
-
 ## 开发
+
+### 技术栈
+
+- **语言**: Go 1.25.3
+- **数据库**: SQLite
+- **DNS SDK**: 阿里云 alidns-20150109/v5
+- **定时器**: timingwheel
+
+### 项目结构
+
+```
+ez-ddns/
+├── dao/                    # 数据访问层
+│   ├── config_dao.go       # 配置数据访问
+│   ├── domain_dao.go       # 域名数据访问
+│   ├── system_dao.go       # 系统设置数据访问
+│   └── dao.go              # DAO初始化
+├── model/                  # 数据模型
+│   └── types.go            # 类型定义
+├── cli_handler.go          # CLI命令处理
+├── ddns_service.go         # DDNS服务核心逻辑
+├── dns.go                  # DNS解析工具
+├── provider.go             # DNS提供商接口
+├── resolver.go             # IP解析工具
+├── task_scheduler.go       # 任务调度器
+├── logger.go               # 日志管理
+├── main.go                 # 主入口
+└── go.mod                  # 依赖管理
+```
 
 ### 本地调试
 
-在 VSCode 中按 `F5` 启动调试（需先配置 `.vscode/launch.json` 中的环境变量）。
+在 VSCode 中按 `F5` 启动调试。
 
 ### 手动构建
 
@@ -334,11 +274,11 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ez-ddns-linux
 
 DDNS 更新流程：
 
-1. **获取公网IP**：通过多个公共服务（如 ipify.org、icanhazip.com）获取当前公网 IP
+1. **获取公网IP**：通过多个公共服务获取当前公网 IP
 2. **本地DNS预检查**：通过系统DNS解析域名，验证当前IP是否已正确指向（减少阿里云API调用）
 3. **查询阿里云记录**：如果DNS预检查未通过，查询阿里云DNS解析记录
 4. **记录比对**：检查阿里云记录中是否已有当前公网IP
-5. **执行更新**：删除旧记录并添加新的A记录
+5. **执行更新**：删除旧记录并添加新的A/AAAA记录
 
 ## 注意事项
 
@@ -350,7 +290,7 @@ DDNS 更新流程：
 6. **域名配置**：`RR` 设置为 `@` 表示主域名，其他值表示子域名（如 `www`、`home` 等）
 7. **多记录支持**：程序会检查所有匹配的解析记录，如果当前 IP 已存在则跳过更新
 8. **DNS缓存**：本地DNS预检查可能受DNS缓存影响，若刚更新过记录需等待缓存过期
-9. **双栈配置**：如需同时支持IPv4和IPv6，请在配置文件中添加两个域名配置项
+9. **双栈配置**：如需同时支持IPv4和IPv6，请为同一域名添加两个记录（分别指定ipv4和ipv6）
 
 ## 原创声明
 
