@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"net"
 
+	"ez-ddns/core/dnsproviders"
 	"ez-ddns/dao"
-	"ez-ddns/dnsproviders"
 	"ez-ddns/model"
 	"ez-ddns/utils"
 )
@@ -18,15 +18,13 @@ import (
 type DDNSService struct {
 	configRepo   dao.ConfigRepository
 	domainRepo   dao.DomainRepository
-	logger       utils.Logger
 	providerFact dnsproviders.ProviderFactory
 }
 
-func NewDDNSService(configRepo dao.ConfigRepository, domainRepo dao.DomainRepository, logger utils.Logger, providerFact dnsproviders.ProviderFactory) *DDNSService {
+func NewDDNSService(configRepo dao.ConfigRepository, domainRepo dao.DomainRepository, providerFact dnsproviders.ProviderFactory) *DDNSService {
 	return &DDNSService{
 		configRepo:   configRepo,
 		domainRepo:   domainRepo,
-		logger:       logger,
 		providerFact: providerFact,
 	}
 }
@@ -37,9 +35,6 @@ func (s *DDNSService) HandleConfig(ctx context.Context, configID string) {
 
 func (s *DDNSService) HandleConfigWithContext(ctx context.Context, configID string) {
 	logger := utils.LoggerFromContext(ctx)
-	if logger.GetLevel() == 0 && s.logger != nil {
-		logger = s.logger
-	}
 
 	config, err := s.configRepo.ReadByID(ctx, configID)
 	if err != nil {
@@ -57,10 +52,12 @@ func (s *DDNSService) HandleConfigWithContext(ctx context.Context, configID stri
 		return
 	}
 
-	s.asyncHandleAllDomains(ctx, *config, provider, logger)
+	s.asyncHandleAllDomains(ctx, *config, provider)
 }
 
-func (s *DDNSService) asyncHandleAllDomains(ctx context.Context, config model.Config, provider dnsproviders.DNSProvider, logger utils.Logger) {
+func (s *DDNSService) asyncHandleAllDomains(ctx context.Context, config model.Config, provider dnsproviders.DNSProvider) {
+	logger := utils.LoggerFromContext(ctx)
+
 	configID := config.ID
 	domains, err := s.domainRepo.ReadByConfigID(ctx, configID)
 	if err != nil {
@@ -75,12 +72,14 @@ func (s *DDNSService) asyncHandleAllDomains(ctx context.Context, config model.Co
 
 	for i := range domains {
 		go func(domainConfig model.DomainConfig) {
-			s.handleDomain(ctx, configID, domainConfig, provider, logger)
+			s.handleDomain(ctx, configID, domainConfig, provider)
 		}(domains[i])
 	}
 }
 
-func (s *DDNSService) handleDomain(ctx context.Context, configID string, domainConfig model.DomainConfig, provider dnsproviders.DNSProvider, logger utils.Logger) {
+func (s *DDNSService) handleDomain(ctx context.Context, configID string, domainConfig model.DomainConfig, provider dnsproviders.DNSProvider) {
+	logger := utils.LoggerFromContext(ctx)
+
 	logger.Debug("配置ID[%s] - 开始DNS检测", configID)
 
 	resolver := NewIPResolver(domainConfig.IPType)
@@ -91,7 +90,7 @@ func (s *DDNSService) handleDomain(ctx context.Context, configID string, domainC
 	}
 	logger.Debug("配置ID[%s] - 当前公网 IP(%s): %s", configID, resolver.GetIPType(), currentIP)
 
-	if s.checkLocalDNS(configID, currentIP, domainConfig, logger) {
+	if s.checkLocalDNS(ctx, configID, currentIP, domainConfig) {
 		logger.Debug("配置ID[%s] - 本地DNS检测通过，无需更新", configID)
 		return
 	}
@@ -102,12 +101,12 @@ func (s *DDNSService) handleDomain(ctx context.Context, configID string, domainC
 		return
 	}
 
-	if s.recordExists(configID, records, currentIP, logger) {
+	if s.recordExists(ctx, configID, records, currentIP) {
 		logger.Debug("配置ID[%s] - DNS记录已正确指向当前IP，无需更新", configID)
 		return
 	}
 
-	if s.updateDomainRecords(ctx, configID, provider, domainConfig, records, currentIP, logger) {
+	if s.updateDomainRecords(ctx, configID, provider, domainConfig, records, currentIP) {
 		domainConfig.LastIP = currentIP
 		if err := s.domainRepo.Update(ctx, &domainConfig); err != nil {
 			logger.Error("配置ID[%s] - 更新数据库中LastIP失败: %v", configID, err)
@@ -115,7 +114,9 @@ func (s *DDNSService) handleDomain(ctx context.Context, configID string, domainC
 	}
 }
 
-func (s *DDNSService) checkLocalDNS(configID string, currentIP string, domainConfig model.DomainConfig, logger utils.Logger) bool {
+func (s *DDNSService) checkLocalDNS(ctx context.Context, configID string, currentIP string, domainConfig model.DomainConfig) bool {
+	logger := utils.LoggerFromContext(ctx)
+
 	domain := fmt.Sprintf("%s.%s", domainConfig.RR, domainConfig.DomainName)
 	logger.Debug("配置ID[%s] - 本地DNS检测: %s", configID, domain)
 
@@ -135,7 +136,9 @@ func (s *DDNSService) checkLocalDNS(configID string, currentIP string, domainCon
 	return false
 }
 
-func (s *DDNSService) recordExists(configID string, records []dnsproviders.DNSRecord, currentIP string, logger utils.Logger) bool {
+func (s *DDNSService) recordExists(ctx context.Context, configID string, records []dnsproviders.DNSRecord, currentIP string) bool {
+	logger := utils.LoggerFromContext(ctx)
+
 	for _, record := range records {
 		logger.Debug("配置ID[%s] - 检查记录: %s.%s -> %s", configID, record.RR, record.Domain, record.Value)
 		if record.Value == currentIP {
@@ -145,24 +148,30 @@ func (s *DDNSService) recordExists(configID string, records []dnsproviders.DNSRe
 	return false
 }
 
-func (s *DDNSService) findRecordsToDelete(configID string, records []dnsproviders.DNSRecord, lastIP string, logger utils.Logger) []dnsproviders.DNSRecord {
+func (s *DDNSService) deleteOldIPRecord(ctx context.Context, configID string, provider dnsproviders.DNSProvider, records []dnsproviders.DNSRecord, lastIP string) error {
+	if len(records) == 0 {
+		return nil
+	}
+
+	logger := utils.LoggerFromContext(ctx)
+
 	if lastIP != "" {
 		for _, record := range records {
 			if record.Value == lastIP {
-				return []dnsproviders.DNSRecord{record}
+				logger.Debug("配置ID[%s] - 删除记录 %s.%s -> %s...", configID, record.RR, record.Domain, record.Value)
+
+				if err := provider.DeleteDomainRecord(ctx, record.ID); err != nil {
+					logger.Error("配置ID[%s] - 删除记录 %s.%s -> %s 失败: %v", configID, record.RR, record.Domain, record.Value, err)
+					return err
+				}
+
+				logger.Info("配置ID[%s] - 删除记录 %s.%s -> %s 成功！", configID, record.RR, record.Domain, record.Value)
+				return nil
 			}
 		}
 	}
 
-	if len(records) > 0 {
-		logger.Debug("配置ID[%s] - 未找到旧IP记录，将删除所有解析记录", configID)
-		return records
-	}
-
-	return nil
-}
-
-func (s *DDNSService) deleteDomainRecords(ctx context.Context, configID string, provider dnsproviders.DNSProvider, records []dnsproviders.DNSRecord, logger utils.Logger) error {
+	logger.Debug("配置ID[%s] - 删除所有远程记录重新同步", configID)
 	var lastErr error
 	for _, record := range records {
 		logger.Debug("配置ID[%s] - 删除记录 %s.%s -> %s...", configID, record.RR, record.Domain, record.Value)
@@ -177,12 +186,12 @@ func (s *DDNSService) deleteDomainRecords(ctx context.Context, configID string, 
 	return lastErr
 }
 
-func (s *DDNSService) updateDomainRecords(ctx context.Context, configID string, provider dnsproviders.DNSProvider, domainConfig model.DomainConfig, records []dnsproviders.DNSRecord, currentIP string, logger utils.Logger) bool {
+func (s *DDNSService) updateDomainRecords(ctx context.Context, configID string, provider dnsproviders.DNSProvider, domainConfig model.DomainConfig, records []dnsproviders.DNSRecord, currentIP string) bool {
+	logger := utils.LoggerFromContext(ctx)
+
 	logger.Debug("配置ID[%s] - 当前IP不在解析记录中，开始更新...", configID)
 
-	deleteRecords := s.findRecordsToDelete(configID, records, domainConfig.LastIP, logger)
-
-	if err := s.deleteDomainRecords(ctx, configID, provider, deleteRecords, logger); err != nil {
+	if err := s.deleteOldIPRecord(ctx, configID, provider, records, domainConfig.LastIP); err != nil {
 		logger.Error("配置ID[%s] - 删除记录过程出现错误: %v", configID, err)
 	}
 

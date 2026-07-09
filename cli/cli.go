@@ -14,10 +14,10 @@ import (
 	"os"
 
 	"ez-ddns/core"
+	"ez-ddns/core/dnsproviders"
 	"ez-ddns/dao/cache"
 	"ez-ddns/dao/caching"
 	"ez-ddns/dao/db"
-	"ez-ddns/dnsproviders"
 	"ez-ddns/utils"
 	"ez-ddns/web"
 	"ez-ddns/web/dto"
@@ -257,7 +257,7 @@ func StartServer(port, apiKey string, autoDDNS bool) {
 	configCaching := caching.NewConfigCaching(configCache, configDB)
 	domainCaching := caching.NewDomainCaching(domainCache, domainDB)
 
-	ddnsService := core.NewDDNSService(configCaching, domainCaching, logger, dnsproviders.NewDNSProvider)
+	ddnsService := core.NewDDNSService(configCaching, domainCaching, dnsproviders.NewDNSProvider)
 
 	autoDDNSService = core.NewAutoDDNSService(configCaching, domainCaching, ddnsService)
 
