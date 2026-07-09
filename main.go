@@ -5,74 +5,98 @@
 package main
 
 import (
-	"database/sql"
+	"flag"
 	"fmt"
+	"os"
 
-	"ez-ddns/dao"
-
-	_ "github.com/glebarez/sqlite"
+	"ez-ddns/cli"
 )
 
-const dbFilePath = "ez-ddns.db"
-
-func initDB() (*sql.DB, error) {
-	db, err := sql.Open("sqlite", dbFilePath)
-	if err != nil {
-		return nil, err
+func main() {
+	if len(os.Args) < 2 {
+		cli.PrintHelp()
+		os.Exit(0)
 	}
 
-	createTablesSQL := `
-	CREATE TABLE IF NOT EXISTS config (
-		id TEXT PRIMARY KEY,
-		access_key_id TEXT,
-		access_key_secret TEXT,
-		provider TEXT,
-		interval INTEGER
-	);
-	CREATE TABLE IF NOT EXISTS domains (
-		id TEXT PRIMARY KEY,
-		config_id TEXT,
-		domain_name TEXT,
-		rr TEXT,
-		ip_type TEXT,
-		last_ip TEXT,
-		FOREIGN KEY (config_id) REFERENCES config(id)
-	);
-	CREATE TABLE IF NOT EXISTS system_settings (
-		id TEXT PRIMARY KEY,
-		data JSON NOT NULL,
-		created_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now')),
-		updated_at TEXT DEFAULT (strftime('%Y-%m-%d %H:%M:%S', 'now'))
-	);
-	CREATE UNIQUE INDEX IF NOT EXISTS idx_domains_unique ON domains (domain_name, rr, ip_type);
-	`
+	command := os.Args[1]
 
-	_, err = db.Exec(createTablesSQL)
-	if err != nil {
-		return nil, err
+	switch command {
+	case "start":
+		handleStartCommand()
+	case "config":
+		handleClientCommand(os.Args[2:], cli.HandleConfigCommand)
+	case "domain":
+		handleClientCommand(os.Args[2:], cli.HandleDomainCommand)
+	case "system":
+		handleClientCommand(os.Args[2:], cli.HandleSystemCommand)
+	case "ddns":
+		handleClientCommand(os.Args[2:], cli.HandleDDNSCommand)
+	case "help":
+		cli.PrintHelp()
+	default:
+		fmt.Printf("未知命令: %s\n", command)
+		cli.PrintHelp()
+		os.Exit(1)
 	}
-
-	return db, nil
 }
 
-func main() {
-	db, err := initDB()
+func handleStartCommand() {
+	startCmd := flag.NewFlagSet("start", flag.ExitOnError)
+
+	autoDDNS := startCmd.Bool("auto-ddns", false, "启动时同时启动自动DDNS服务")
+	port := startCmd.String("port", "8080", "HTTP服务端口")
+	apiKey := startCmd.String("api-key", "", "API密钥（用于认证）")
+
+	err := startCmd.Parse(os.Args[2:])
 	if err != nil {
-		fmt.Printf("初始化数据库失败: %v\n", err)
-		return
-	}
-	defer db.Close()
-
-	dao.Init(db)
-
-	command, subcommand, args := ParseArgs()
-	if command == "" {
-		PrintHelp()
-		return
+		fmt.Printf("参数解析失败: %v\n", err)
+		os.Exit(1)
 	}
 
-	cliHandler := NewCLIHandler(dao.Config, dao.Domain, dao.System)
-	if err := cliHandler.HandleCommand(command, subcommand, args); err != nil {
-		fmt.Printf("操作失败: %v\n", err)
+	cli.StartServer(*port, *apiKey, *autoDDNS)
+}
+
+func handleClientCommand(args []string, handler func([]string)) {
+	flags := map[string]*string{
+		"-server":  nil,
+		"-api-key": nil,
 	}
+
+	remainingArgs := extractFlags(args, flags)
+
+	server := "http://localhost:8080"
+	if flags["-server"] != nil {
+		server = *flags["-server"]
+	}
+
+	apiKey := ""
+	if flags["-api-key"] != nil {
+		apiKey = *flags["-api-key"]
+	}
+
+	cli.SetServer(server)
+	cli.SetAPIKey(apiKey)
+
+	handler(remainingArgs)
+}
+
+func extractFlags(args []string, flags map[string]*string) []string {
+	remainingArgs := []string{}
+	i := 0
+	for i < len(args) {
+		if _, ok := flags[args[i]]; ok {
+			if i+1 < len(args) {
+				val := args[i+1]
+				flags[args[i]] = &val
+				i += 2
+			} else {
+				fmt.Printf("错误: %s 需要指定值\n", args[i])
+				os.Exit(1)
+			}
+		} else {
+			remainingArgs = append(remainingArgs, args[i])
+			i++
+		}
+	}
+	return remainingArgs
 }

@@ -7,12 +7,12 @@ require (
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.1.16
 	github.com/alibabacloud-go/tea v1.4.0
 	github.com/glebarez/sqlite v1.11.0
-	github.com/RussellLuo/timingwheel v0.0.0-20220218152713-54845bda3108
 )
 
 require (
 	github.com/alibabacloud-go/alibabacloud-gateway-spi v0.0.5 // indirect
 	github.com/alibabacloud-go/debug v1.0.1 // indirect
+	github.com/alibabacloud-go/tea-utils v1.4.3 // indirect
 	github.com/alibabacloud-go/tea-utils/v2 v2.0.9 // indirect
 	github.com/aliyun/credentials-go v1.4.5 // indirect
 	github.com/clbanning/mxj/v2 v2.7.0 // indirect
