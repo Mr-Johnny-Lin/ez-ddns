@@ -13,17 +13,15 @@ import (
 )
 
 type DomainCaching struct {
-	cache    dao.DomainRepository
-	db       dao.DomainRepository
-	mu       sync.RWMutex
-	onChange func() // 数据变更回调，用于通知任务调度器
+	cache dao.DomainRepository
+	db    dao.DomainRepository
+	mu    sync.RWMutex
 }
 
-func NewDomainCaching(cache dao.DomainRepository, db dao.DomainRepository, onChange func()) *DomainCaching {
+func NewDomainCaching(cache dao.DomainRepository, db dao.DomainRepository) *DomainCaching {
 	return &DomainCaching{
-		cache:    cache,
-		db:       db,
-		onChange: onChange,
+		cache: cache,
+		db:    db,
 	}
 }
 
@@ -75,10 +73,6 @@ func (p *DomainCaching) Update(ctx context.Context, domain *model.DomainConfig) 
 
 	p.cache.Delete(ctx, domain.ID)
 
-	if p.onChange != nil {
-		p.onChange()
-	}
-
 	return nil
 }
 
@@ -92,10 +86,6 @@ func (p *DomainCaching) Create(ctx context.Context, domain *model.DomainConfig) 
 	}
 
 	p.cache.Create(ctx, domain)
-
-	if p.onChange != nil {
-		p.onChange()
-	}
 
 	return nil
 }
@@ -111,10 +101,6 @@ func (p *DomainCaching) Delete(ctx context.Context, id string) error {
 
 	p.cache.Delete(ctx, id)
 
-	if p.onChange != nil {
-		p.onChange()
-	}
-
 	return nil
 }
 
@@ -128,10 +114,6 @@ func (p *DomainCaching) DeleteByConfigID(ctx context.Context, configID string) e
 	}
 
 	p.cache.DeleteByConfigID(ctx, configID)
-
-	if p.onChange != nil {
-		p.onChange()
-	}
 
 	return nil
 }

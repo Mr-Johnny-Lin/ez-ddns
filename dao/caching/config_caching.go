@@ -13,17 +13,15 @@ import (
 )
 
 type ConfigCaching struct {
-	cache    dao.ConfigRepository
-	db       dao.ConfigRepository
-	mu       sync.RWMutex
-	onChange func() // 数据变更回调，用于通知任务调度器
+	cache dao.ConfigRepository
+	db    dao.ConfigRepository
+	mu    sync.RWMutex
 }
 
-func NewConfigCaching(cache dao.ConfigRepository, db dao.ConfigRepository, onChange func()) *ConfigCaching {
+func NewConfigCaching(cache dao.ConfigRepository, db dao.ConfigRepository) *ConfigCaching {
 	return &ConfigCaching{
-		cache:    cache,
-		db:       db,
-		onChange: onChange,
+		cache: cache,
+		db:    db,
 	}
 }
 
@@ -108,10 +106,6 @@ func (p *ConfigCaching) Create(ctx context.Context, config *model.Config) error 
 
 	p.cache.Create(ctx, config)
 
-	if p.onChange != nil {
-		p.onChange()
-	}
-
 	return nil
 }
 
@@ -126,10 +120,6 @@ func (p *ConfigCaching) Update(ctx context.Context, config *model.Config) error 
 
 	p.cache.Delete(ctx, config.ID)
 
-	if p.onChange != nil {
-		p.onChange()
-	}
-
 	return nil
 }
 
@@ -143,10 +133,6 @@ func (p *ConfigCaching) Delete(ctx context.Context, id string) error {
 	}
 
 	p.cache.Delete(ctx, id)
-
-	if p.onChange != nil {
-		p.onChange()
-	}
 
 	return nil
 }

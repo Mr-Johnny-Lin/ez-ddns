@@ -254,23 +254,16 @@ func StartServer(port, apiKey string, autoDDNS bool) {
 
 	var autoDDNSService *core.AutoDDNSService
 
-	configCaching := caching.NewConfigCaching(configCache, configDB, func() {
-		if autoDDNSService != nil {
-			autoDDNSService.NotifyConfigChange()
-		}
-	})
-
-	domainCaching := caching.NewDomainCaching(domainCache, domainDB, func() {
-		if autoDDNSService != nil {
-			autoDDNSService.NotifyConfigChange()
-		}
-	})
+	configCaching := caching.NewConfigCaching(configCache, configDB)
+	domainCaching := caching.NewDomainCaching(domainCache, domainDB)
 
 	ddnsService := core.NewDDNSService(configCaching, domainCaching, logger, dnsproviders.NewDNSProvider)
 
 	autoDDNSService = core.NewAutoDDNSService(configCaching, domainCaching, ddnsService)
 
-	handlers := web.NewAPIHandlers(service.NewConfigService(configCaching, domainCaching, sqliteDB), domainCaching, systemCaching, ddnsService, autoDDNSService)
+	configService := service.NewConfigService(configCaching, domainCaching, sqliteDB, autoDDNSService)
+
+	handlers := web.NewAPIHandlers(configService, domainCaching, systemCaching, ddnsService, autoDDNSService)
 
 	serverConfig := &web.ServerConfig{
 		Addr:   ":" + port,

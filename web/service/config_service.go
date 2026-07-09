@@ -15,16 +15,22 @@ import (
 )
 
 type ConfigService struct {
-	configRepo dao.ConfigRepository
-	domainRepo dao.DomainRepository
-	db         *sql.DB
+	configRepo      dao.ConfigRepository
+	domainRepo      dao.DomainRepository
+	db              *sql.DB
+	autoDDNSService AutoDDNSServiceHandler
 }
 
-func NewConfigService(configRepo dao.ConfigRepository, domainRepo dao.DomainRepository, db *sql.DB) *ConfigService {
+type AutoDDNSServiceHandler interface {
+	NotifyConfigChange()
+}
+
+func NewConfigService(configRepo dao.ConfigRepository, domainRepo dao.DomainRepository, db *sql.DB, autoDDNSService AutoDDNSServiceHandler) *ConfigService {
 	return &ConfigService{
-		configRepo: configRepo,
-		domainRepo: domainRepo,
-		db:         db,
+		configRepo:      configRepo,
+		domainRepo:      domainRepo,
+		db:              db,
+		autoDDNSService: autoDDNSService,
 	}
 }
 
@@ -65,6 +71,10 @@ func (s *ConfigService) CreateConfigWithDomains(ctx context.Context, configDTO *
 
 	if err := commitOrRollback(nil); err != nil {
 		return nil, err
+	}
+
+	if s.autoDDNSService != nil {
+		s.autoDDNSService.NotifyConfigChange()
 	}
 
 	domainDTOs := make([]*dto.DomainDTO, len(domainModels))
@@ -132,6 +142,10 @@ func (s *ConfigService) UpdateConfigWithDomains(ctx context.Context, configDTO *
 		return nil, err
 	}
 
+	if s.autoDDNSService != nil {
+		s.autoDDNSService.NotifyConfigChange()
+	}
+
 	domainDTOs := make([]*dto.DomainDTO, len(domainModels))
 	for i, d := range domainModels {
 		domainDTOs[i] = &dto.DomainDTO{
@@ -154,7 +168,31 @@ func (s *ConfigService) UpdateConfigWithDomains(ctx context.Context, configDTO *
 }
 
 func (s *ConfigService) DeleteConfigWithDomains(ctx context.Context, configID string) error {
-	return s.configRepo.Delete(ctx, configID)
+	newCtx, _, commitOrRollback, err := utils.BeginTxWithPropagation(ctx, s.db)
+	if err != nil {
+		return err
+	}
+	ctx = newCtx
+
+	if err := s.domainRepo.DeleteByConfigID(ctx, configID); err != nil {
+		commitOrRollback(err)
+		return err
+	}
+
+	if err := s.configRepo.Delete(ctx, configID); err != nil {
+		commitOrRollback(err)
+		return err
+	}
+
+	if err := commitOrRollback(nil); err != nil {
+		return err
+	}
+
+	if s.autoDDNSService != nil {
+		s.autoDDNSService.NotifyConfigChange()
+	}
+
+	return nil
 }
 
 func (s *ConfigService) GetConfigWithDomains(ctx context.Context, configID string) (*dto.ConfigDTO, error) {
