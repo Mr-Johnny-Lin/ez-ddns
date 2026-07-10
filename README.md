@@ -10,68 +10,102 @@
 - ✅ 本地DNS预检查：更新前先通过DNS解析验证，减少运营商API调用
 - ✅ 智能判断：无记录时新增，有记录且 IP 变化时更新
 - ✅ 支持多条解析记录管理
-- ✅ 持续轮询监控，可配置检查间隔（默认3分钟）
+- ✅ 持续轮询监控，可配置检查间隔（默认5分钟）
 - ✅ 支持日志级别配置（DEBUG/INFO/ERROR）
 - ✅ 自动保存上次 IP 记录，避免重复更新
 - ✅ 支持 Windows 和 Linux 平台
 - ✅ 完整的 CI/CD 自动化构建（GitHub Actions）
 - ✅ **CLI命令管理**：通过命令行管理配置和域名
 - ✅ **SQLite数据持久化**：配置存储在本地数据库中
+- ✅ **HTTP API服务**：支持远程管理和控制
 
 ## 快速开始
 
 ### 启动服务
 
 ```bash
-# 启动DDNS服务（默认日志级别info）
+# 启动DDNS服务（默认端口8080）
 ez-ddns start
 
-# 启动服务并设置调试日志
-ez-ddns start --loglevel=debug
+# 启动服务并设置端口和认证密钥
+ez-ddns start -port 8080 -api-key my-secret-key
+
+# 启动服务并自动开启定时DDNS更新
+ez-ddns start -port 8080 -auto-ddns
 ```
 
 ### 配置管理
 
 ```bash
-# 创建配置
-ez-ddns config create <config-id> --access-key-id=<key> --access-key-secret=<secret> [--provider=aliyun] [--interval=180]
-
-# 示例
-ez-ddns config create home --access-key-id=LTAI5t... --access-key-secret=xxx --interval=300
+# 创建配置（通过配置文件）
+ez-ddns config create -f config.json
 
 # 查看所有配置
 ez-ddns config list
 
+# 获取单个配置详情（含域名）
+ez-ddns config list my-config-id
+
 # 更新配置
-ez-ddns config update <config-id> --interval=600
+ez-ddns config update my-config-id -f new-config.json
 
 # 删除配置
-ez-ddns config delete <config-id>
+ez-ddns config delete my-config-id
+```
+
+**配置文件格式 (config.json):**
+
+```json
+{
+  "ID": "my-aliyun",
+  "AccessKeyId": "your-key",
+  "AccessKeySecret": "secret",
+  "Provider": "aliyun",
+  "Interval": 300,
+  "Domains": [
+    {
+      "DomainName": "example.com",
+      "RR": "www",
+      "IPType": "ipv4"
+    }
+  ]
+}
 ```
 
 ### 域名管理
 
 ```bash
-# 添加域名到配置
-ez-ddns domain add <config-id> --domain-name=<domain> --rr=<record> [--ip-type=ipv4]
+# 添加域名（绑定到指定配置）
+ez-ddns domain create config-id -f domain.json
 
-# 示例 - 添加IPv4记录
-ez-ddns domain add home --domain-name=example.com --rr=www --ip-type=ipv4
-
-# 示例 - 添加IPv6记录
-ez-ddns domain add home --domain-name=example.com --rr=www --ip-type=ipv6
-
-# 查看配置的域名列表
-ez-ddns domain list <config-id>
+# 更新域名
+ez-ddns domain update domain-id -f new-domain.json
 
 # 删除域名
-ez-ddns domain remove <config-id> --domain-name=<domain> --rr=<record> --ip-type=ipv4
+ez-ddns domain delete domain-id
+```
 
-# 查看系统状态
-ez-ddns status
+**域名配置文件格式 (domain.json):**
 
-# 设置日志级别
-ez-ddns loglevel debug
+```json
+{
+  "DomainName": "example.com",
+  "RR": "@",
+  "IPType": "ipv4"
+}
+```
+
+### DDNS操作
+
+```bash
+# 手动触发DDNS更新
+ez-ddns ddns trigger config-id
+
+# 启动自动DDNS服务
+ez-ddns ddns start
+
+# 停止自动DDNS服务
+ez-ddns ddns stop
 ```
 
 ### CLI命令完整帮助
@@ -82,14 +116,30 @@ ez-ddns help
 
 ## 配置项说明
 
+**配置文件 (config.json):**
+
 | 配置项 | 说明 | 默认值 |
 |--------|------|--------|
-| `access-key-id` | 阿里云 AccessKey ID | 必填 |
-| `access-key-secret` | 阿里云 AccessKey Secret | 必填 |
-| `provider` | DNS运营商类型 | `aliyun` |
-| `interval` | 轮询间隔（秒） | `180`（3分钟） |
-| `loglevel` | 日志级别：`debug`、`info`、`error` | `info` |
-| `ip-type` | IP类型：`ipv4`、`ipv6` | `ipv4` |
+| `ID` | 配置唯一标识 | 必填 |
+| `AccessKeyId` | 阿里云 AccessKey ID | 必填 |
+| `AccessKeySecret` | 阿里云 AccessKey Secret | 必填 |
+| `Provider` | DNS运营商类型 | `aliyun` |
+| `Interval` | 轮询间隔（秒） | `300`（5分钟） |
+| `Domains` | 关联的域名列表 | 可选 |
+
+**域名配置 (domain.json):**
+
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `DomainName` | 域名（如 example.com） | 必填 |
+| `RR` | 主机记录（@表示根域名，www表示二级域名） | 必填 |
+| `IPType` | IP类型：`ipv4`、`ipv6` | `ipv4` |
+
+**系统配置 (system.json):**
+
+| 配置项 | 说明 | 默认值 |
+|--------|------|--------|
+| `LogLevel` | 日志级别：`debug`、`info`、`error` | `info` |
 
 ## 使用方法
 
@@ -97,32 +147,32 @@ ez-ddns help
 
 ```powershell
 # 创建配置
-.\ez-ddns-windows-amd64.exe config create home --access-key-id=LTAI5t... --access-key-secret=xxx
+.\ez-ddns-windows-amd64.exe config create -f config.json
 
 # 添加域名
-.\ez-ddns-windows-amd64.exe domain add home --domain-name=example.com --rr=www --ip-type=ipv4
+.\ez-ddns-windows-amd64.exe domain create my-config -f domain.json
 
-# 启动服务
-.\ez-ddns-windows-amd64.exe start --loglevel=debug
+# 启动服务（带自动DDNS）
+.\ez-ddns-windows-amd64.exe start -port 8080 -auto-ddns
 ```
 
 ### Linux
 
 ```bash
 # 创建配置
-./ez-ddns-linux-amd64 config create home --access-key-id=LTAI5t... --access-key-secret=xxx
+./ez-ddns-linux-amd64 config create -f config.json
 
 # 添加域名
-./ez-ddns-linux-amd64 domain add home --domain-name=example.com --rr=www --ip-type=ipv4
+./ez-ddns-linux-amd64 domain create my-config -f domain.json
 
 # 启动服务
-./ez-ddns-linux-amd64 start
+./ez-ddns-linux-amd64 start -port 8080 -auto-ddns
 ```
 
 ### 后台运行（Linux）
 
 ```bash
-nohup ./ez-ddns-linux-amd64 start > ddns.log 2>&1 &
+nohup ./ez-ddns-linux-amd64 start -port 8080 -auto-ddns > ddns.log 2>&1 &
 ```
 
 查看日志：
@@ -132,17 +182,17 @@ tail -f ddns.log
 
 ### 使用 systemd 服务（推荐）
 
-创建服务文件 `/etc/systemd/system/ddns.service`：
+创建服务文件 `/etc/systemd/system/ez-ddns.service`：
 
 ```ini
 [Unit]
-Description=EZ DDNS
+Description=EZ DDNS Service
 After=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=/opt/ez-ddns
-ExecStart=/opt/ez-ddns/ez-ddns-linux-amd64 start --loglevel=info
+ExecStart=/opt/ez-ddns/ez-ddns-linux-amd64 start -port 8080 -auto-ddns
 Restart=always
 RestartSec=10
 
@@ -154,12 +204,20 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable ddns
-sudo systemctl start ddns
-sudo systemctl status ddns
+sudo systemctl enable ez-ddns
+sudo systemctl start ez-ddns
+sudo systemctl status ez-ddns
 ```
 
-> **注意**：配置和域名通过CLI命令管理，无需在systemd服务中设置环境变量。
+### 远程管理
+
+```bash
+# 远程查看配置列表
+ez-ddns config list -server http://192.168.1.100:8080
+
+# 远程操作（带API密钥认证）
+ez-ddns config list my-config -server http://remote:8080 -api-key xxx
+```
 
 ## 命令参考
 
@@ -167,27 +225,49 @@ sudo systemctl status ddns
 
 | 命令 | 说明 |
 |------|------|
-| `ez-ddns start [--loglevel=<level>]` | 启动DDNS服务 |
-| `ez-ddns status` | 查看系统状态 |
-| `ez-ddns loglevel <debug/info/error>` | 设置日志级别 |
+| `ez-ddns start [-port=<port>] [-api-key=<key>] [-auto-ddns]` | 启动DDNS服务 |
 | `ez-ddns help` | 显示帮助信息 |
 
 ### 配置管理命令
 
 | 命令 | 说明 |
 |------|------|
-| `ez-ddns config list` | 列出所有配置 |
-| `ez-ddns config create <id> --access-key-id=<key> --access-key-secret=<secret> [--interval=<seconds>] [--provider=<provider>]` | 创建配置 |
-| `ez-ddns config update <id> [--access-key-id=<key>] [--access-key-secret=<secret>] [--interval=<seconds>] [--provider=<provider>]` | 更新配置 |
+| `ez-ddns config list [config-id]` | 列出所有配置或获取单个配置详情 |
+| `ez-ddns config create -f <file>` | 创建配置 |
+| `ez-ddns config update <id> -f <file>` | 更新配置 |
 | `ez-ddns config delete <id>` | 删除配置 |
 
 ### 域名管理命令
 
 | 命令 | 说明 |
 |------|------|
-| `ez-ddns domain list <config-id>` | 列出指定配置的域名 |
-| `ez-ddns domain add <config-id> --domain-name=<domain> --rr=<record> [--ip-type=<ipv4\|ipv6>]` | 添加域名 |
-| `ez-ddns domain remove <config-id> --domain-name=<domain> --rr=<record> [--ip-type=<ipv4\|ipv6>]` | 删除域名 |
+| `ez-ddns domain create <config-id> -f <file>` | 创建域名记录 |
+| `ez-ddns domain update <id> -f <file>` | 更新域名记录 |
+| `ez-ddns domain delete <id>` | 删除域名记录 |
+
+### 系统配置命令
+
+| 命令 | 说明 |
+|------|------|
+| `ez-ddns system get` | 获取系统配置 |
+| `ez-ddns system update -f <file>` | 更新系统配置 |
+
+### DDNS控制命令
+
+| 命令 | 说明 |
+|------|------|
+| `ez-ddns ddns trigger <config-id>` | 立即触发DDNS更新 |
+| `ez-ddns ddns start` | 启动自动DDNS服务 |
+| `ez-ddns ddns stop` | 停止自动DDNS服务 |
+
+### 远程操作参数
+
+适用于 `config`、`domain`、`system`、`ddns` 命令：
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `-server <address>` | 远程服务器地址 | `http://localhost:8080` |
+| `-api-key <key>` | 服务器API密钥 | 无 |
 
 ## GitHub Actions 构建
 
@@ -230,7 +310,7 @@ sudo systemctl status ddns
 ### 技术栈
 
 - **语言**: Go 1.25.3
-- **数据库**: SQLite
+- **数据库**: SQLite (glebarez/sqlite)
 - **DNS SDK**: 阿里云 alidns-20150109/v5
 - **定时器**: timingwheel
 
@@ -238,22 +318,43 @@ sudo systemctl status ddns
 
 ```
 ez-ddns/
+├── cli/                    # 命令行接口
+│   ├── cli.go              # CLI命令处理
+│   └── help.md             # 帮助文档
+├── core/                   # 核心业务逻辑
+│   ├── dnsproviders/       # DNS提供商接口
+│   │   ├── aliyun.go       # 阿里云DNS实现
+│   │   └── dns_provider.go # DNS提供商接口定义
+│   ├── auto_ddns.go        # 自动DDNS服务
+│   ├── ddns_service.go     # DDNS核心服务
+│   └── ip_resolver.go      # IP解析工具
 ├── dao/                    # 数据访问层
-│   ├── config_dao.go       # 配置数据访问
-│   ├── domain_dao.go       # 域名数据访问
-│   ├── system_dao.go       # 系统设置数据访问
-│   └── dao.go              # DAO初始化
+│   ├── cache/              # 内存缓存
+│   ├── caching/            # 缓存+数据库组合层
+│   ├── db/                 # SQLite数据库操作
+│   └── repository.go       # 数据访问接口定义
 ├── model/                  # 数据模型
-│   └── types.go            # 类型定义
-├── cli_handler.go          # CLI命令处理
-├── ddns_service.go         # DDNS服务核心逻辑
-├── dns.go                  # DNS解析工具
-├── provider.go             # DNS提供商接口
-├── resolver.go             # IP解析工具
-├── task_scheduler.go       # 任务调度器
-├── logger.go               # 日志管理
-├── main.go                 # 主入口
-└── go.mod                  # 依赖管理
+│   ├── config.go           # 配置模型
+│   ├── ip_type.go          # IP类型定义
+│   ├── provider_type.go    # 提供商类型定义
+│   └── system_config.go    # 系统配置模型
+├── utils/                  # 工具函数
+│   ├── logger.go           # 日志管理
+│   ├── mask.go             # 敏感信息脱敏
+│   ├── timewheel.go        # 时间轮定时器
+│   ├── token.go            # 认证令牌生成
+│   └── tx.go               # 事务工具
+├── web/                    # HTTP服务层
+│   ├── dto/                # 数据传输对象
+│   ├── service/            # 业务服务
+│   ├── handlers.go         # API处理器
+│   ├── middleware.go       # 中间件
+│   ├── router.go           # 路由配置
+│   └── server.go           # HTTP服务器
+├── .github/workflows/      # GitHub Actions配置
+├── main.go                 # 程序入口
+├── go.mod                  # 依赖管理
+└── go.sum                  # 依赖校验
 ```
 
 ### 本地调试
@@ -291,6 +392,7 @@ DDNS 更新流程：
 7. **多记录支持**：程序会检查所有匹配的解析记录，如果当前 IP 已存在则跳过更新
 8. **DNS缓存**：本地DNS预检查可能受DNS缓存影响，若刚更新过记录需等待缓存过期
 9. **双栈配置**：如需同时支持IPv4和IPv6，请为同一域名添加两个记录（分别指定ipv4和ipv6）
+10. **远程访问**：如需远程管理，确保服务器端口开放，并设置强API密钥
 
 ## 原创声明
 
